@@ -391,7 +391,7 @@ local function checkProgress()
 
             -- Avoid division by zero or very small times
             if type(time_elapsed_ms) == 'number' and time_elapsed_ms > 50 then -- Require at least 50ms to avoid noisy data
-                local current_period_bps = blocks_since_last_speed_check / (time_elapsed_ms / 1000) -- Calculate speed for this period in blocks per second
+                local current_period_bps = blocks_since_last_speed_check / (time_elapsed_ms / 1000) or 1 -- Calculate speed for this period in blocks per second
                  if type(current_period_bps) == 'number' and not math.huge(current_period_bps) and not math.nan(current_period_bps) then -- Check for valid number
                     -- Simple averaging: average the new rate with the existing average
                     avg_blocks_per_second = (avg_blocks_per_second + current_period_bps) / 2
