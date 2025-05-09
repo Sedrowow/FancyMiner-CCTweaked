@@ -9,9 +9,9 @@ or advanced computer (best use with a 2x2 advanced monitor on scale 0.5) running
 
 ### pre setup
 
- recievers need
- - flex.lua
- - recieve.lua
+recievers need
+- flex.lua
+- recieve.lua
 
 the turtle miner needs
 - dig.lua
@@ -31,9 +31,10 @@ dig will create some lists to use
 
 ## setup instructions
 
-Coming soon...
-i plan to make a link for a universal setup, that runs the script from here, as pastebin is or was down (unreachable) where i've done this
-
+copy the follwing into your cctweaked computer:
+```txt
+wget run https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/refs/heads/main/setup.lua
+```
 
 CREDIT GOES TO [Flexico](https://github.com/Flexico) that made the original  [Digsoft: A Fancy Resumable Quarry Program](https://forums.computercraft.cc/index.php?topic=316.0)]
 i improved upon his script, as i thought, its a good start
