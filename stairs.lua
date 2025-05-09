@@ -2,9 +2,6 @@
 -- Run "stairs help"
 -- Or dig a staircase to bedrock
 -- Run "stairs"
--- <Flexico64@gmail.com>
--- Please email me if you have any
--- bugs or suggestions!
 
 -----------------------------------
 --  /¯\  || ||  /\  |¯\ |¯\ \\// --
@@ -116,6 +113,39 @@ if #args > 0 and args[1] == "help" then
  return
 end --if
 
+-- Modem Initialization and Status Function
+local modem
+local hasModem = false
+local modem_channel = 6464 -- Default modem channel
+local p = flex.getPeripheral("modem")
+if #p > 0 then
+    hasModem = true
+    modem = peripheral.wrap(p[1])
+    modem.open(modem_channel)
+end
+
+local last_status_sent_time = os.epoch("utc") or 0
+local status_send_interval = 10 * 1000 -- Send status every 10 seconds (in milliseconds)
+
+local function sendStatus(is_mining, estimated_time_display)
+    if not hasModem then return end
+
+    local current_epoch_time_ms = os.epoch("utc") or 0
+    if current_epoch_time_ms - last_status_sent_time >= status_send_interval then
+        local status_message = {
+            type = "status_update",
+            id = os.getComputerID(),
+            label = os.getComputerLabel(),
+            fuel = turtle.getFuelLevel(),
+            position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
+            is_mining = is_mining,
+            estimated_time = estimated_time_display or "N/A",
+            inventory_summary = {} -- Add inventory summary if needed
+        }
+        modem.transmit(modem_channel, modem_channel + 1, status_message)
+        last_status_sent_time = current_epoch_time_ms
+    end
+end
 
 -- What Goes Where
 flex.printColors("Slot 1: Fuel\n"..
@@ -126,31 +156,9 @@ flex.printColors("Slot 1: Fuel\n"..
 flex.printColors("Press Enter",
   colors.pink)
 while flex.getKey() ~= keys.enter do
- -- Handle remote commands during waiting
- local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
- if event == "modem_message" then
-     local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-     if type(message) == "table" and message.type == "command" then
-         if message.command == "status_request" then
-             local status = {
-                 type = "status",
-                 fuel = turtle.getFuelLevel(),
-                 inventory = dig.getInventory(),
-                 position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                 is_mining = false, -- Not actively building stairs yet
-                 estimated_time = "Waiting for user input..." -- Placeholder
-             }
-             modem.transmit(flex.modem_channel, replyChannel, status)
-         elseif message.command == "unload_command" then
-             flex.send("Received unload command while waiting, initiating unload...", colors.yellow)
-             dig.dropNotFuel()
-             flex.send("Unload complete.", colors.lightBlue)
-             modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-         end
-     end
- end
- if event ~= "key" then sleep(0.1) end -- Prevent tight loop if no event
-end --while
+    sendStatus(false, "Waiting for user input...")
+    sleep(0.1)
+end
 
 
 -- Convert Inputs
@@ -198,6 +206,7 @@ function placeTorch()
  end --if
 
  turtle.select(2)
+ sendStatus(true, "Placing torch...")
 end --function
 
 
@@ -209,6 +218,7 @@ function stepDown()
  for x=1,height-2 do
   dig.blockLava()
   if not dig.up() then return false end
+  sendStatus(true, "Stepping down...")
  end --for
  dig.blockLava()
  dig.blockLavaUp()
@@ -238,6 +248,7 @@ function stepDown()
  for x=1,height-2 do
   dig.blockLava()
   if not dig.down() then return false end
+  sendStatus(true, "Stepping down...")
  end --for
  dig.blockLava()
  if not dig.placeDown() then return false end
@@ -256,6 +267,7 @@ function stepDown()
 
  if not dig.fwd() then return false end
 
+ sendStatus(true, "Completed a step down.")
  return true
 end --function
 
@@ -318,6 +330,7 @@ local function turnRight()
  if not dig.fwd() then return false end
 
  torchNum = torchNum + 1
+ sendStatus(true, "Turning right.")
  return true
 end --function
 
@@ -374,7 +387,7 @@ function endcap(h,stop)
   dig.right()
 
  end --if
-
+ sendStatus(true, "Creating endcap.")
  return true
 end --function
 
@@ -415,6 +428,7 @@ function avoidBedrock()
 
  dig.gotor(direction)
  dig.gotoy(dig.getymin())
+ sendStatus(true, "Avoiding bedrock.")
 end --function
 
 
@@ -426,218 +440,32 @@ turtle.select(2)
 x = 0
 direction = dig.getr()
 while true do
- -- Handle remote commands during digging
- local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
- if event == "modem_message" then
-     local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-     if type(message) == "table" and message.type == "command" then
-         if message.command == "status_request" then
-             -- Estimate remaining steps/levels (simple for stairs)
-             local total_depth = dy -- Assuming dy is the target depth
-             local current_y = dig.gety()
-             local estimated_remaining_levels = math.max(0, current_y - dig.getymin()) -- Simplified estimate
-
-             local estimated_time_display = "Calculating..."
-             if estimated_remaining_levels > 0 then
-                 -- Very rough time estimate based on remaining levels and average time per step
-                 local avg_time_per_level = 30 -- Calibrate this value based on your turtle's performance
-                 local estimated_time_seconds = estimated_remaining_levels * avg_time_per_level
-                 local hours = math.floor(estimated_time_seconds / 3600)
-                 local minutes = math.floor((estimated_time_seconds % 3600) / 60)
-                 local seconds = math.floor(estimated_time_seconds % 60)
-                 estimated_time_display = string.format("%02d:%02d:%02d", hours, minutes, seconds)
-             end
-
-             local status = {
-                 type = "status",
-                 fuel = turtle.getFuelLevel(),
-                 inventory = dig.getInventory(),
-                 position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                 is_mining = true, -- Actively building stairs
-                 estimated_time = estimated_time_display
-             }
-             modem.transmit(flex.modem_channel, replyChannel, status)
-         elseif message.command == "unload_command" then
-             flex.send("Received unload command, initiating unload...", colors.yellow)
-             dig.dropNotFuel()
-             flex.send("Unload complete.", colors.lightBlue)
-             modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-         end
-     end
- end
- if event ~= nil then sleep(0.1) end -- Prevent tight loop if no event
 
  for n=0,dz-1 do
   if not stepDown() then break end
   x = x + 1
   if x >= dy then break end
-  -- Handle remote commands during steps
-  local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
-  if event == "modem_message" then
-      local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-      if type(message) == "table" and message.type == "command" then
-          if message.command == "status_request" then
-              local total_depth = dy
-              local current_y = dig.gety()
-              local estimated_remaining_levels = math.max(0, current_y - dig.getymin())
-
-              local estimated_time_display = "Calculating..."
-              if estimated_remaining_levels > 0 then
-                  local avg_time_per_level = 30
-                  local estimated_time_seconds = estimated_remaining_levels * avg_time_per_level
-                  local hours = math.floor(estimated_time_seconds / 3600)
-                  local minutes = math.floor((estimated_time_seconds % 3600) / 60)
-                  local seconds = math.floor(estimated_time_seconds % 60)
-                  estimated_time_display = string.format("%02d:%02d:%02d", hours, minutes, seconds)
-              end
-
-              local status = {
-                  type = "status",
-                  fuel = turtle.getFuelLevel(),
-                  inventory = dig.getInventory(),
-                  position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                  is_mining = true,
-                  estimated_time = estimated_time_display
-              }
-              modem.transmit(flex.modem_channel, replyChannel, status)
-          elseif message.command == "unload_command" then
-              flex.send("Received unload command, initiating unload...", colors.yellow)
-              dig.dropNotFuel()
-              flex.send("Unload complete.", colors.lightBlue)
-              modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-          end
-      end
-  end
+  sendStatus(true, "Digging step " .. tostring(n+1) .. " of " .. tostring(dz))
  end
  if dig.isStuck() or x >= dy then break end
  if not turnRight() then break end
  x = x + 1
- -- Handle remote commands after turning
- local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
- if event == "modem_message" then
-     local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-     if type(message) == "table" and message.type == "command" then
-         if message.command == "status_request" then
-             local total_depth = dy
-             local current_y = dig.gety()
-             local estimated_remaining_levels = math.max(0, current_y - dig.getymin())
-
-             local estimated_time_display = "Calculating..."
-             if estimated_remaining_levels > 0 then
-                 local avg_time_per_level = 30
-                 local estimated_time_seconds = estimated_remaining_levels * avg_time_per_level
-                 local hours = math.floor(estimated_time_seconds / 3600)
-                 local minutes = math.floor((estimated_time_seconds % 3600) / 60)
-                 local seconds = math.floor(estimated_time_seconds % 60)
-                 estimated_time_display = string.format("%02d:%02d:%02d", hours, minutes, seconds)
-             end
-
-             local status = {
-                 type = "status",
-                 fuel = turtle.getFuelLevel(),
-                 inventory = dig.getInventory(),
-                 position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                 is_mining = true,
-                 estimated_time = estimated_time_display
-             }
-             modem.transmit(flex.modem_channel, replyChannel, status)
-         elseif message.command == "unload_command" then
-             flex.send("Received unload command, initiating unload...", colors.yellow)
-             dig.dropNotFuel()
-             flex.send("Unload complete.", colors.lightBlue)
-             modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-         end
-     end
- end
-
+ sendStatus(true, "Turned right, starting next row.")
 
  direction = dig.getr()
  for n=0,dx-1 do
   if not stepDown() then break end
   x = x + 1
   if x >= dy then break end
-  -- Handle remote commands during steps
-   local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
-   if event == "modem_message" then
-       local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-       if type(message) == "table" and message.type == "command" then
-           if message.command == "status_request" then
-               local total_depth = dy
-               local current_y = dig.gety()
-               local estimated_remaining_levels = math.max(0, current_y - dig.getymin())
-
-               local estimated_time_display = "Calculating..."
-               if estimated_remaining_levels > 0 then
-                   local avg_time_per_level = 30
-                   local estimated_time_seconds = estimated_remaining_levels * avg_time_per_level
-                   local hours = math.floor(estimated_time_seconds / 3600)
-                   local minutes = math.floor((estimated_time_seconds % 3600) / 60)
-                   local seconds = math.floor(estimated_time_seconds % 60)
-                   estimated_time_display = string.format("%02d:%02d:%02d", hours, minutes, seconds)
-               end
-
-               local status = {
-                   type = "status",
-                   fuel = turtle.getFuelLevel(),
-                   inventory = dig.getInventory(),
-                   position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                   is_mining = true,
-                   estimated_time = estimated_time_display
-               }
-               modem.transmit(flex.modem_channel, replyChannel, status)
-           elseif message.command == "unload_command" then
-               flex.send("Received unload command, initiating unload...", colors.yellow)
-               dig.dropNotFuel()
-               flex.send("Unload complete.", colors.lightBlue)
-               modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-           end
-       end
-   end
+  sendStatus(true, "Digging step " .. tostring(n+1) .. " of " .. tostring(dx))
  end
  if dig.isStuck() or x >= dy then break end
  if not turnRight() then break end
  x = x + 1
- -- Handle remote commands after turning
-  local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
-  if event == "modem_message" then
-      local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-      if type(message) == "table" and message.type == "command" then
-          if message.command == "status_request" then
-              local total_depth = dy
-              local current_y = dig.gety()
-              local estimated_remaining_levels = math.max(0, current_y - dig.getymin())
-
-              local estimated_time_display = "Calculating..."
-              if estimated_remaining_levels > 0 then
-                  local avg_time_per_level = 30
-                  local estimated_time_seconds = estimated_remaining_levels * avg_time_per_level
-                  local hours = math.floor(estimated_time_seconds / 3600)
-                  local minutes = math.floor((estimated_time_seconds % 3600) / 60)
-                  local seconds = math.floor(estimated_time_seconds % 60)
-                  estimated_time_display = string.format("%02d:%02d:%02d", hours, minutes, seconds)
-              end
-
-              local status = {
-                  type = "status",
-                  fuel = turtle.getFuelLevel(),
-                  inventory = dig.getInventory(),
-                  position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                  is_mining = true,
-                  estimated_time = estimated_time_display
-              }
-              modem.transmit(flex.modem_channel, replyChannel, status)
-          elseif message.command == "unload_command" then
-              flex.send("Received unload command, initiating unload...", colors.yellow)
-              dig.dropNotFuel()
-              flex.send("Unload complete.", colors.lightBlue)
-              modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-          end
-      end
-  end
+ sendStatus(true, "Turned right, starting next row.")
 
  direction = dig.getr()
-end --while
-
+end
 
 avoidBedrock()
 if not dig.fwd() then avoidBedrock() end
@@ -648,30 +476,7 @@ if not endcap(1,true) then avoidBedrock() end
 dig.left(2)
 while not turtle.detect() do
  dig.fwd()
- -- Handle remote commands while returning to edge
- local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
- if event == "modem_message" then
-     local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-     if type(message) == "table" and message.type == "command" then
-         if message.command == "status_request" then
-              local status = {
-                  type = "status",
-                  fuel = turtle.getFuelLevel(),
-                  inventory = dig.getInventory(),
-                  position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                  is_mining = true, -- Still working
-                  estimated_time = "Returning to edge..." -- Placeholder
-              }
-              modem.transmit(flex.modem_channel, replyChannel, status)
-         elseif message.command == "unload_command" then
-             flex.send("Received unload command, initiating unload...", colors.yellow)
-             dig.dropNotFuel()
-             flex.send("Unload complete.", colors.lightBlue)
-             modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-         end
-     end
- end
- if event ~= nil then sleep(0.1) end
+ sendStatus(true, "Returning to edge.")
 end --while
 dig.back()
 
@@ -682,6 +487,7 @@ if #dig.getKnownBedrock() > 0 then
   dig.right()
   dig.fwd()
  end --for
+ sendStatus(true, "Compensating for bedrock.")
 end --for
 
 
@@ -691,6 +497,264 @@ end --for
 -- | [  | / |  | | ]   ||   ][  | \ | | [¯| --
 --  \_] | \ |||| ||    ||  [__] || \|  \__| --
 ----------------------------------------------
+
+-- Return locations of bench/chest
+local function checkTools()
+ local bench,chest = 0,0
+ local x
+ for x=1,16 do
+  turtle.select(x)
+  if flex.isItem(name_bench) then
+   bench = x
+  elseif flex.isItem(name_chest) then
+   chest = x
+  end --if/else
+ end --for
+ return bench,chest
+end --function
+
+
+local oldTool
+local success = true
+
+local function equip()
+ if tool_side == "right" then
+  return turtle.equipRight()
+ elseif tool_side == "left" then
+  return turtle.equipLeft()
+ end --if/else
+end --function
+
+
+-- Equip Crafting Bench
+local function setTool()
+ if tool_side == "none" then return end
+
+ flex.condense()
+ local x,y = checkTools()
+
+ if x == 0 then
+  flex.send("Crafting Bench not found",
+    colors.red)
+  success = false
+  sendStatus(false, "Crafting bench not found!")
+  return false
+ end --if
+
+ turtle.select(x)
+ y = turtle.getItemCount()
+ if y > 1 then
+  turtle.transferTo(math.min(
+    x+1,16),y-1)
+ end --if
+
+ if not equip() then
+  return false
+ end --if
+
+ if turtle.getItemCount() > 0 then
+  oldTool = turtle.getItemDetail()["name"]
+ end --if
+
+ flex.send("Crafting Bench equipped",
+   colors.yellow)
+ sendStatus(true, "Equipped crafting bench.")
+ return true
+end --function setTool()
+
+
+-- Unequip Crafting Bench
+local function restoreTool()
+ if tool_side == "none" then return end
+
+ flex.condense()
+ local slot = turtle.getSelectedSlot()
+ local x,y
+ for x=1,16 do
+  turtle.select(x)
+  y = turtle.getItemCount()
+
+  if oldTool == nil then
+   -- If no tool, put Bench in empty slot
+   if y == 0 then
+    return equip()
+   end --if
+
+  else
+   if y > 0 then
+    if turtle.getItemDetail()["name"]
+       == oldTool then
+     if equip() then
+	     flex.send("Tool restored",
+	       colors.lightBlue)
+	     turtle.select(slot)
+	     sendStatus(true, "Tool restored.")
+      return true
+     end --if
+    end --if
+   end --if
+  end --if
+ end --for
+
+ flex.send("Unable to restore tool",
+   colors.red)
+ success = false
+ sendStatus(false, "Unable to restore tool.")
+ return false
+end --function restoreTool()
+
+
+local depth = -dig.gety()
+local bench, chest = checkTools()
+local stairsNeeded = depth*2
+local craftNum
+
+-- Count existing stair blocks
+local numStairs = 0
+for x=1,16 do
+ turtle.select(x)
+ y = turtle.getItemCount()
+ if y > 0 then
+  if flex.isItem("stairs") then
+   numStairs = numStairs + y
+  end --if
+ end --if
+end --for
+
+-- Count Cobblestone
+local numCobble = 0
+for x=1,16 do
+ turtle.select(x)
+ if flex.isItem(name_cobble) then
+  numCobble = numCobble + turtle.getItemCount()
+ end --if
+end --for
+turtle.select(1)
+
+craftNum = math.ceil((stairsNeeded-numStairs)/4)
+
+
+-- Check against cobble needed
+if numCobble < craftNum*6
+   or stairsNeeded > 64*4 then
+
+ x = math.floor(numCobble/6)
+ x = math.min(x,64)
+ y = math.ceil(stairsNeeded/4)
+ z = math.floor(100*x/y)
+
+ flex.send("#1Only enough cobblestone "
+   .."to craft #4"..tostring(z)
+   .."#0%#1 of stairs")
+ success = false
+ sendStatus(false, "Insufficient cobblestone for stairs.")
+
+ craftNum = x
+end --if
+
+if craftNum < 0 then
+ craftNum = 0
+end --if
+
+
+-- If Crafting needs to (and can) happen
+if craftNum > 0 and chest > 0 and
+   ( bench > 0 or tool_side == "none" ) then
+
+ local stairSlots = {1,5,6,9,10,11}
+ local freeSlots = {2,3,4,7,8,12,13,14,15,16}
+
+ -- Equip Crafing Banch and place Chest
+ setTool()
+ turtle.select(chest)
+ turtle.place()
+
+ -- Everything except Cobble into Chest
+ for x=1,16 do
+  turtle.select(x)
+  if turtle.getItemCount() > 0 then
+   if not flex.isItem(name_cobble)
+      or flex.isItem("stairs") then
+    turtle.drop()
+   end --if
+  end --if
+ end --for
+ flex.condense()
+
+ -- Collect Cobble to Craft
+ for x=1,11 do
+  turtle.select(x)
+  if x <= 5 then
+   turtle.transferTo(x+11)
+  elseif x == 6 then
+   turtle.transferTo(4)
+  elseif x == 7 then
+   turtle.transferTo(8)
+  else
+   turtle.drop()
+  end --if/else
+  if turtle.getItemCount() > 0 then
+   turtle.drop()
+  end --if
+ end --for
+
+ -- Arrange Cobble into Recipe
+ z = 16
+ for x=1,#stairSlots do
+  turtle.select(z)
+  while turtle.getItemCount() < craftNum do
+   if z > 12 then
+    z = z-1
+   else
+    z = z-4
+   end --if
+   if z < 1 then break end
+   turtle.select(z)
+  end --while
+  if z < 1 then break end
+  turtle.select(z)
+  turtle.transferTo(stairSlots[x],
+    craftNum)
+ end --for
+
+ -- Drop excess cobble into chest
+ for x=1,#freeSlots do
+  turtle.select(freeSlots[x])
+  turtle.drop()
+ end --for
+
+ -- Main Event! Craft Function! =D
+ local cb = peripheral.wrap("left") or
+            peripheral.wrap("right")
+ if cb.craft(craftNum) then
+  flex.send("Stairs crafted",colors.lightBlue)
+  sendStatus(true, "Stairs crafted.")
+ else
+  flex.send("Crafting error",colors.red)
+  success = false
+  sendStatus(false, "Crafting error.")
+ end --if
+
+ -- Restore inventory in correct order
+ for x=1,16 do
+  turtle.select(x)
+  turtle.drop()
+ end --for
+ turtle.select(1)
+ while turtle.suck() do end
+ restoreTool()
+ turtle.dig()
+ flex.condense()
+
+end --if (crafting needed)
+
+
+
+-----------------------------------------------
+-- |¯\ || || [¯¯] ||   |¯\  [¯¯] |\ ||  /¯¯] --
+-- | < ||_||  ][  ||_  |  |  ][  | \ | | [¯| --
+-- |_/  \__| [__] |__] |_/  [__] || \|  \__| --
+-----------------------------------------------
 
 
 local function placeStairs()
@@ -711,6 +775,7 @@ local function placeStairs()
 
   if z then
    turtle.select(slot)
+   sendStatus(false, "Not enough stairs to place.")
    return false
   end --if
  end --if
@@ -723,11 +788,14 @@ local function placeStairs()
  dig.left()
  dig.fwd()
  dig.right()
+ sendStatus(true, "Placing stairs.")
+ return true
 end --function
 
 
 flex.send("Returning to surface",
   colors.yellow)
+sendStatus(true, "Returning to surface.")
 
 function isDone()
  -- Reached Surface
@@ -736,45 +804,7 @@ end
 
 -- Follow the Spiral [and place Stairs]
 while not isDone() do
- -- Handle remote commands during ascent
- local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
- if event == "modem_message" then
-     local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-     if type(message) == "table" and message.type == "command" then
-         if message.command == "status_request" then
-              local total_depth = dy
-              local current_y = dig.gety()
-              local estimated_remaining_levels = math.max(0, current_y - dig.getymin())
-
-              local estimated_time_display = "Calculating..."
-              if estimated_remaining_levels > 0 then
-                  local avg_time_per_level = 30
-                  local estimated_time_seconds = estimated_remaining_levels * avg_time_per_level
-                  local hours = math.floor(estimated_time_seconds / 3600)
-                  local minutes = math.floor((estimated_time_seconds % 3600) / 60)
-                  local seconds = math.floor(estimated_time_seconds % 60)
-                  estimated_time_display = string.format("%02d:%02d:%02d", hours, minutes, seconds)
-              end
-
-              local status = {
-                  type = "status",
-                  fuel = turtle.getFuelLevel(),
-                  inventory = dig.getInventory(),
-                  position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                  is_mining = true, -- Still working
-                  estimated_time = estimated_time_display
-              }
-              modem.transmit(flex.modem_channel, replyChannel, status)
-         elseif message.command == "unload_command" then
-             flex.send("Received unload command, initiating unload...", colors.yellow)
-             dig.dropNotFuel()
-             flex.send("Unload complete.", colors.lightBlue)
-             modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-         end
-     end
- end
- if event ~= nil then sleep(0.1) end
-
+    sendStatus(true, "Ascending...")
 
  if dig.getr()%360 == 0 then
   while dig.getz() < dig.getzmax()-1 do
@@ -782,44 +812,7 @@ while not isDone() do
    dig.up()
    placeStairs()
    if isDone() then break end
-   -- Handle remote commands during steps
-    local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
-    if event == "modem_message" then
-        local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-        if type(message) == "table" and message.type == "command" then
-            if message.command == "status_request" then
-                 local total_depth = dy
-                 local current_y = dig.gety()
-                 local estimated_remaining_levels = math.max(0, current_y - dig.getymin())
-
-                 local estimated_time_display = "Calculating..."
-                 if estimated_remaining_levels > 0 then
-                     local avg_time_per_level = 30
-                     local estimated_time_seconds = estimated_remaining_levels * avg_time_per_level
-                     local hours = math.floor(estimated_time_seconds / 3600)
-                     local minutes = math.floor((estimated_time_seconds % 3600) / 60)
-                     local seconds = math.floor(estimated_time_seconds % 60)
-                     estimated_time_display = string.format("%02d:%02d:%02d", hours, minutes, seconds)
-                 end
-
-                 local status = {
-                     type = "status",
-                     fuel = turtle.getFuelLevel(),
-                     inventory = dig.getInventory(),
-                     position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                     is_mining = true,
-                     estimated_time = estimated_time_display
-                 }
-                 modem.transmit(flex.modem_channel, replyChannel, status)
-            elseif message.command == "unload_command" then
-                flex.send("Received unload command, initiating unload...", colors.yellow)
-                dig.dropNotFuel()
-                flex.send("Unload complete.", colors.lightBlue)
-                modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-            end
-        end
-    end
-  end
+  end --while
 
  elseif dig.getr()%360 == 90 then
   while dig.getx() < dig.getxmax()-1 do
@@ -827,44 +820,7 @@ while not isDone() do
    dig.up()
    placeStairs()
    if isDone() then break end
-   -- Handle remote commands during steps
-    local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
-    if event == "modem_message" then
-        local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-        if type(message) == "table" and message.type == "command" then
-            if message.command == "status_request" then
-                 local total_depth = dy
-                 local current_y = dig.gety()
-                 local estimated_remaining_levels = math.max(0, current_y - dig.getymin())
-
-                 local estimated_time_display = "Calculating..."
-                 if estimated_remaining_levels > 0 then
-                     local avg_time_per_level = 30
-                     local estimated_time_seconds = estimated_remaining_levels * avg_time_per_level
-                     local hours = math.floor(estimated_time_seconds / 3600)
-                     local minutes = math.floor((estimated_time_seconds % 3600) / 60)
-                     local seconds = math.floor(estimated_time_seconds % 60)
-                     estimated_time_display = string.format("%02d:%02d:%02d", hours, minutes, seconds)
-                 end
-
-                 local status = {
-                     type = "status",
-                     fuel = turtle.getFuelLevel(),
-                     inventory = dig.getInventory(),
-                     position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                     is_mining = true,
-                     estimated_time = estimated_time_display
-                 }
-                 modem.transmit(flex.modem_channel, replyChannel, status)
-            elseif message.command == "unload_command" then
-                flex.send("Received unload command, initiating unload...", colors.yellow)
-                dig.dropNotFuel()
-                flex.send("Unload complete.", colors.lightBlue)
-                modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-            end
-        end
-    end
-  end
+  end --while
 
  elseif dig.getr()%360 == 180 then
   while dig.getz() > dig.getzmin()+1 do
@@ -879,44 +835,7 @@ while not isDone() do
     placeStairs()
    end --if
    if isDone() then break end
-   -- Handle remote commands during steps
-    local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
-    if event == "modem_message" then
-        local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-        if type(message) == "table" and message.type == "command" then
-            if message.command == "status_request" then
-                 local total_depth = dy
-                 local current_y = dig.gety()
-                 local estimated_remaining_levels = math.max(0, current_y - dig.getymin())
-
-                 local estimated_time_display = "Calculating..."
-                 if estimated_remaining_levels > 0 then
-                     local avg_time_per_level = 30
-                     local estimated_time_seconds = estimated_remaining_levels * avg_time_per_level
-                     local hours = math.floor(estimated_time_seconds / 3600)
-                     local minutes = math.floor((estimated_time_seconds % 3600) / 60)
-                     local seconds = math.floor(estimated_time_seconds % 60)
-                     estimated_time_display = string.format("%02d:%02d:%02d", hours, minutes, seconds)
-                 end
-
-                 local status = {
-                     type = "status",
-                     fuel = turtle.getFuelLevel(),
-                     inventory = dig.getInventory(),
-                     position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                     is_mining = true,
-                     estimated_time = estimated_time_display
-                 }
-                 modem.transmit(flex.modem_channel, replyChannel, status)
-            elseif message.command == "unload_command" then
-                flex.send("Received unload command, initiating unload...", colors.yellow)
-                dig.dropNotFuel()
-                flex.send("Unload complete.", colors.lightBlue)
-                modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-            end
-        end
-    end
-  end
+  end --while
 
  elseif dig.getr()%360 == 270 then
   while dig.getx() > dig.getxmin()+1 do
@@ -924,44 +843,7 @@ while not isDone() do
    dig.up()
    placeStairs()
    if isDone() then break end
-   -- Handle remote commands during steps
-    local event, p1, p2, p3, p4, p5, p6 = os.pullEvent("modem_message", 0.1)
-    if event == "modem_message" then
-        local modemSide, senderChannel, replyChannel, message, senderDistance = p1, p2, p3, p4, p5
-        if type(message) == "table" and message.type == "command" then
-            if message.command == "status_request" then
-                 local total_depth = dy
-                 local current_y = dig.gety()
-                 local estimated_remaining_levels = math.max(0, current_y - dig.getymin())
-
-                 local estimated_time_display = "Calculating..."
-                 if estimated_remaining_levels > 0 then
-                     local avg_time_per_level = 30
-                     local estimated_time_seconds = estimated_remaining_levels * avg_time_per_level
-                     local hours = math.floor(estimated_time_seconds / 3600)
-                     local minutes = math.floor((estimated_time_seconds % 3600) / 60)
-                     local seconds = math.floor(estimated_time_seconds % 60)
-                     estimated_time_display = string.format("%02d:%02d:%02d", hours, minutes, seconds)
-                 end
-
-                 local status = {
-                     type = "status",
-                     fuel = turtle.getFuelLevel(),
-                     inventory = dig.getInventory(),
-                     position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
-                     is_mining = true,
-                     estimated_time = estimated_time_display
-                 }
-                 modem.transmit(flex.modem_channel, replyChannel, status)
-            elseif message.command == "unload_command" then
-                flex.send("Received unload command, initiating unload...", colors.yellow)
-                dig.dropNotFuel()
-                flex.send("Unload complete.", colors.lightBlue)
-                modem.transmit(flex.modem_channel, replyChannel, { type = "ack", command = "unload_command" })
-            end
-        end
-    end
-  end
+  end --while
 
  end --if/else
 
@@ -977,9 +859,11 @@ dig.goto(0,0,0,0)
 if success then
  flex.send("Stairway finished!",
    colors.lightBlue)
+   sendStatus(false, "Stairway finished!")
 else
  flex.send("Reached Origin",
    colors.lightBlue)
+   sendStatus(false, "Reached origin.")
 end --if
 
 flex.modemOff()
