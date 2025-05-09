@@ -49,7 +49,7 @@ if setupType == "1" then
     if allDownloaded then
         -- Label the turtle if it is one
         if turtle then
-            setComputerLabel("FancyMiner")
+            os.setComputerLabel("FancyMiner")
             print("Turtle labeled 'FancyMiner'.")
         else
             print("Not a turtle. Skipping labeling.")
