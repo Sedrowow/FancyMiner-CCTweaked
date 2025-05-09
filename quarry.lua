@@ -1,23 +1,9 @@
--- This is a replacement for the
--- 'excavate' program, as it can re-
--- cover from a reboot/unload event.
--- Also avoids destroying spawners!
-
------------------------------------
--- [¯¯] || || |¯\ [¯¯] ||   |¯¯] --
---  ||  ||_|| | /  ||  ||_  | ]  --
---  ||   \__| | \  ||  |__| |__] --
------------------------------------
---  /¯\  || ||  /\  |¯\ |¯\ \\// --
--- | O | ||_|| |  | | / | /  \/  --
---  \_\\  \__| |||| | \ | \  ||  --
------------------------------------
-
+local log_file = "log.txt"
+local options_file = "flex_options.cfg"
 os.loadAPI("flex.lua")
 os.loadAPI("dig.lua")
-local log_file = "log.txt" -- Added log_file variable
-local options_file = "flex_options.cfg" -- Added options_file variable
-local modem_channel = 6464 -- Added modem_channel variable
+local modem_channel = 6464
+-- local received_command = nil -- Remove if not needed for status only
 
 dig.doBlacklist() -- Avoid Protected Blocks
 dig.doAttack() -- Attack entities that block the way
@@ -48,7 +34,7 @@ if #p > 0 then
     hasModem = true
     modem = peripheral.wrap(p[1])
     -- No need to open modem if only using modem.transmit for broadcast on a specific channel
-    print("DEBUG: Modem peripheral wrapped. Will attempt to transmit status on channel 6465.")
+    print("DEBUG: Modem peripheral wrapped. Will attempt to transmit status on channel "..tostring(modem_channel)..".") -- Corrected channel number in print
 else
     print("DEBUG: No modem peripheral found during initialization. Status updates disabled.")
     -- The script can still run without a modem, but status updates won't work.
@@ -115,9 +101,11 @@ for x=1,#args do
    return -- Script exits
   end --if
   skip = skip_value -- Assign only if it's a number
-  if dig.getymin() > -skip then
-   dig.setymin(-skip)
-  end --if
+  -- The getymin in dig.lua is not set based on the initial depth arg, it's the lowest y reached.
+  -- So the check below doesn't make sense here. The skip is only for initial descent.
+  -- if dig.getymin() > -skip then
+  --  dig.setymin(-skip)
+  -- end --if
  end --if
 end --for
 
@@ -132,107 +120,175 @@ end --if
 
 ----------------------------------------------
 -- |¯¯]|| |||\ || /¯][¯¯][¯¯] /¯\ |\ ||/¯¯\\ --
--- | ] ||_||| \\ || [  ||  ][ | O || \ |\¯\\ --
--- ||   \__||| \| \_| || [__] \_/ || \|\\__/ --
+-- | ] ||_||| \ || || [  ||  ][ | O || \ |\¯\\ --
+-- ||   \__||| \| \_| || [__] \_/ || \|\__/ --
 ----------------------------------------------
 
-local location
+local saved_location -- Variable to store the location before going to base
 local function gotoBase()
- local x = dig.getxlast()
- location = dig.location()
- -- skip is used here
- if dig.gety() < -skip then dig.up() end
- dig.gotox(0)
- dig.gotoz(0)
- dig.gotor(180)
- dig.gotoy(0)
- dig.gotox(0)
- dig.setxlast(x)
- dig.gotoz(0)
- dig.gotor(180)
- return location
+ -- Save the current location *before* moving
+ saved_location = dig.location()
+
+ -- Move to base coordinates (0, 0, 0) and face South (180)
+ -- dig.goto handles movement in the correct order (Y then X then Z)
+ dig.goto(0, 0, 0, 180)
+
+ -- At base (0,0,0, facing South)
+ -- You can add base operations here like refueling or dumping before returning
+
+ return saved_location -- Return the saved location
 end --function
 
 local function returnFromBase(loc)
- local loc = loc or location
- local x = dig.getxlast()
- dig.gotor(0)
- checkFuel()
- -- skip is used here
- dig.gotoy(math.min(loc[2]+1,-skip))
- checkFuel()
- dig.gotoz(loc[3])
- checkFuel()
- dig.gotox(loc[1])
- dig.setxlast(x) -- Important for restoring
- checkFuel()
- dig.gotor(loc[4])
- checkFuel()
- dig.gotoy(loc[2])
+ local loc = loc or saved_location -- Use the saved_location if loc is nil
+
+ if type(loc) ~= "table" or #loc < 4 then
+     flex.send("Error: Invalid saved location data to return from base.", colors.red)
+     return false -- Indicate failure to return
+ end
+
+ -- Return to the saved coordinates and rotation
+ -- dig.goto handles movement in the correct order
+ dig.goto(loc[1], loc[2], loc[3], loc[4])
+
+ -- After returning, perform checks
+ checkFuel() -- Check fuel after moving back
+ checkInv() -- Check inventory after moving back
+ checkHalt() -- Check halt after moving back
+ dig.checkBlocks() -- Check building blocks
+
+ return true -- Indicate successful return
 end --function
 
 
 local function checkHalt()
- -- Remote control halt via modem is removed (assuming for status only)
- -- Check for redstone signal from above
- if not rs.getInput("top") then
-  return
- end --if
- -- skip is used here
- if dig.gety() == -skip then -- Check against skip depth
-  return
- end --if
- if dig.gety() == 0 then -- Check against surface
-  return
- end --if
+ -- Check for redstone signal from above (Y+1)
+ -- Check redstone input specifically on the top side
+ if peripheral.isPresent("top") then
+    local top_peripheral = peripheral.wrap("top")
+    if top_peripheral.isBundled? then -- Check if it's a bundled cable
+        -- Assuming redstone input from the top peripheral acts as a halt signal
+        local bundled_input = top_peripheral.getBundledInput("top")
+        if bundled_input > 0 then -- Check if any bundled color is active
+             -- Redstone signal from above
+             local loc,x
+             -- Manual halt; redstone signal from above
+             flex.send("Manual halt initiated (Redstone)", colors.orange)
+             flex.printColors("Press ENTER to resume mining\n"
+               .."or SPACE to return to base",
+               colors.pink)
 
+             while true do
+              x = flex.getKey()
+              if x == keys.enter then return end
+              if x == keys.space then break end
+             end --while
 
- local loc,x
- -- Manual halt; redstone signal from above
- flex.send("Manual halt initiated (Redstone)", colors.orange)
- flex.printColors("Press ENTER to resume mining\n"
-   .."or SPACE to return to base",
-   colors.pink)
+             flex.send("Returning to base", colors.yellow)
+             loc = gotoBase() -- Go to base
+             print(" ")
+             flex.printColors("Press ENTER to resume mining",
+               colors.pink)
+             while flex.getKey() ~= keys.enter do
+              sleep(1)
+             end --while
 
- while true do
-  x = flex.getKey()
-  if x == keys.enter then return end
-  if x == keys.space then break end
- end --while
+             -- Operations at base before returning
+             if dodumps then dig.doDumpDown() end
+             dig.dropNotFuel()
+             flex.send("Resuming quarry",colors.yellow)
+             returnFromBase(loc) -- Return from base
+             return true -- Indicate halt was handled
+        end
+    elseif top_peripheral.getInput? then -- Check if it's a standard redstone port
+         if top_peripheral.getInput("top") then -- Check if standard redstone is active
+             -- Redstone signal from above
+             local loc,x
+             -- Manual halt; redstone signal from above
+             flex.send("Manual halt initiated (Redstone)", colors.orange)
+              flex.printColors("Press ENTER to resume mining\n"
+               .."or SPACE to return to base",
+               colors.pink)
 
- flex.send("Returning to base", colors.yellow)
- loc = gotoBase()
- print(" ")
- flex.printColors("Press ENTER to resume mining",
-   colors.pink)
- while flex.getKey() ~= keys.enter do
-  sleep(1)
- end --while
+             while true do
+              x = flex.getKey()
+              if x == keys.enter then return end
+              if x == keys.space then break end
+             end --while
 
- if dodumps then dig.doDumpDown() end
- dig.dropNotFuel()
- flex.send("Resuming quarry",colors.yellow)
- returnFromBase(loc)
+             flex.send("Returning to base", colors.yellow)
+             loc = gotoBase() -- Go to base
+             print(" ")
+             flex.printColors("Press ENTER to resume mining",
+               colors.pink)
+             while flex.getKey() ~= keys.enter do
+              sleep(1)
+             end --while
 
+             -- Operations at base before returning
+             if dodumps then dig.doDumpDown() end
+             dig.dropNotFuel()
+             flex.send("Resuming quarry",colors.yellow)
+             returnFromBase(loc) -- Return from base
+             return true -- Indicate halt was handled
+         end
+    end
+ end
+ -- Check redstone input on all sides as a fallback/alternative
+ local sides = {"bottom", "left", "right", "front", "back"}
+ for _, side in ipairs(sides) do
+     if rs.getInput(side) then
+         local loc,x
+         -- Manual halt; redstone signal from the side
+         flex.send("Manual halt initiated (Redstone on "..side..")", colors.orange)
+          flex.printColors("Press ENTER to resume mining\n"
+           .."or SPACE to return to base",
+           colors.pink)
+
+         while true do
+          x = flex.getKey()
+          if x == keys.enter then return end
+          if x == keys.space then break end
+         end --while
+
+         flex.send("Returning to base", colors.yellow)
+         loc = gotoBase() -- Go to base
+         print(" ")
+         flex.printColors("Press ENTER to resume mining",
+           colors.pink)
+         while flex.getKey() ~= keys.enter do
+          sleep(1)
+         end --while
+
+         -- Operations at base before returning
+         if dodumps then dig.doDumpDown() end
+         dig.dropNotFuel()
+         flex.send("Resuming quarry",colors.yellow)
+         returnFromBase(loc) -- Return from base
+         return true -- Indicate halt was handled
+     end
+ end
+
+ return false -- Indicate no halt occurred
 end --function
 
 
 local function checkInv()
+ -- Check if inventory is full (slot 16 has items)
  if turtle.getItemCount(16) > 0 then
-
-  if dodumps then
-   dig.right(2)
-   dig.doDump()
-   dig.left(2)
-  end --if
-
-  if turtle.getItemCount(14) > 0 then
-   local loc = gotoBase()
-   dig.dropNotFuel()
-   returnFromBase(loc)
-  end --if
-
- end --if
+     flex.send("Inventory full, returning to base", colors.yellow)
+     local loc = gotoBase() -- Go to base
+     -- At base (0,0,0, facing South)
+     dig.gotor(0) -- Face North at base for potential dumping/refueling area
+     if dodumps then
+         dig.doDump() -- Dump forward (North)
+     end
+     dig.dropNotFuel() -- Drop other items into chest at base (should be North)
+     flex.send("Inventory emptied", colors.lightBlue)
+     returnFromBase(loc) -- Return to where it was
+     return true -- Indicate inventory was handled
+ end
+ return false -- Indicate inventory is not full
 end --function
 
 local total_quarry_blocks = 0 -- Will be calculated after initial descent
@@ -252,23 +308,26 @@ function checkFuel()
 
  -- Use a more robust fuel check based on estimated needs
  -- Only check if estimated_fuel_needed is a valid number (it should be if math is correct)
- if type(estimated_fuel_needed) == 'number' and estimated_fuel_needed > 0 and a < estimated_fuel_needed * 1.2 then -- Check if current fuel is less than 120% of estimated needed
+ -- Also ensure current fuel is actually less than estimated needed before returning to base
+ if type(estimated_fuel_needed) == 'number' and estimated_fuel_needed > 0 and a < estimated_fuel_needed then -- Check if current fuel is less than estimated needed (removed 1.2 safety margin for going to base)
      flex.send("Fuel low (Estimated needed for remaining: "..tostring(math.ceil(estimated_fuel_needed)).."), returning to surface", colors.yellow)
-     local loc = gotoBase() -- gotoBase calls movement, which calls addBlocksProcessed
+     local loc = gotoBase() -- Go to base (gotoBase calls movement, which calls addBlocksProcessed)
      turtle.select(1)
      if dodumps then dig.doDumpDown() end
-     while turtle.suckUp() do sleep(0) end
-     dig.dropNotFuel()
+     while turtle.suckUp() do sleep(0) end -- Suck up fuel items from chest below
+     dig.dropNotFuel() -- Drop items that aren't fuel into a chest (should be North)
      -- Ensure refuel amount is not nil or non-positive
-     local refuel_amount = estimated_fuel_needed * 1.5
+     local refuel_amount = estimated_fuel_needed * 1.5 -- Refuel to 150% of estimated needed
      if type(refuel_amount) == 'number' and refuel_amount > 0 then
-       dig.refuel(refuel_amount) -- Refuel to 150% of estimated needed
+       dig.refuel(refuel_amount)
      else
        dig.refuel(1000) -- Fallback refuel amount
      end
      flex.send("Fuel acquired! ("..tostring(turtle.getFuelLevel()).." fuel)", colors.lightBlue)
-     returnFromBase(loc) -- returnFromBase calls movement, which calls addBlocksProcessed
+     returnFromBase(loc) -- Return from base (returnFromBase calls movement, which calls addBlocksProcessed)
+     return true -- Indicate fuel was handled
  end
+ return false -- Indicate fuel is sufficient
 end --function checkFuel()
 
 -- Variables for status sending interval (DEFINED OUTSIDE any function)
@@ -282,6 +341,8 @@ local status_send_interval = 4 * 1000 -- Send status every 4 seconds (in millise
 local blocks_since_last_speed_check = 0 -- Renamed for clarity
 -- Use os.epoch("local") for speed learning time
 local time_of_last_speed_check = os.epoch("local") or 0 -- Use local time for speed learning
+-- **ADDED: In-game time for pause detection**
+local time_of_last_in_game_check = os.time() or 0 -- Use in-game time for pause detection
 local avg_blocks_per_second = 0.8 -- Initial estimate (blocks processed per second)
 local speed_check_threshold = 50 -- Recalculate speed after processing this many blocks
 
@@ -315,7 +376,7 @@ local function sendStatus()
         local seconds = math.floor(estimated_time_remaining_seconds % 60)
         estimated_time_remaining_duration_str = string.format("%02d:%02d", minutes, seconds)
 
-    elseif total_quarry_blocks > 0 and estimated_remaining_blocks <= 0 then
+    elseif type(total_quarry_blocks) == 'number' and total_quarry_blocks > 0 and type(current_processed_blocks) == 'number' and estimated_remaining_blocks <= 0 then
         estimated_completion_time_str = "Completed" -- Indicate if digging is theoretically done
         estimated_time_remaining_duration_str = "00:00" -- Duration is zero when completed
     end
@@ -329,12 +390,13 @@ local function sendStatus()
             table.insert(inventory_summary, { name = item.name, count = item.count })
         end
     end
-    -- Infer mining state; assumes mining when not stuck
-    local is_mining_status = not dig.isStuck()
+    -- Infer mining state; assumes mining when not stuck and not completed
+    local is_mining_status = not dig.isStuck() and (type(estimated_remaining_blocks) ~= 'number' or estimated_remaining_blocks > 0)
 
 
     local status_message = {
         type = "status_update", -- Indicate this is a status update
+        script = "quarry", -- Added script identifier
         id = os.getComputerID(), -- Include turtle ID
         label = os.getComputerLabel(), -- Include turtle label
         fuel = turtle.getFuelLevel(),
@@ -363,6 +425,8 @@ end
 
 -- checkProgress function (MODIFIED to call sendStatus and implement speed learning)
 local function checkProgress()
+    -- print("DEBUG: checkProgress called.")
+
     -- Print detailed progress information (keep this for console)
     term.setCursorPos(1,1)
     term.clearLine()
@@ -383,42 +447,74 @@ local function checkProgress()
     term.clearLine()
     flex.printColors("Depth: "..tostring(-dig.gety()).."m / "..tostring(-ymin).."m", colors.green)
 
-    -- Speed Learning Logic
-    -- Use processed blocks for speed calculation base
+    -- Speed Learning Logic with Pause Detection
     local current_processed_blocks = dig.getBlocksProcessed() or 0
-    -- Only update if blocks were actually processed since the last check
+    local current_epoch_time_ms = os.epoch("local") or 0 -- Real-world time in milliseconds
+    local current_in_game_time_sec = os.time() or 0 -- In-game time in seconds
+
+    local real_world_time_elapsed_ms = current_epoch_time_ms - (time_of_last_speed_check or 0)
+    local in_game_time_elapsed_sec = current_in_game_time_sec - (time_of_last_in_game_check or 0)
+
+    -- Convert real-world elapsed time to seconds for comparison
+    local real_world_time_elapsed_sec = real_world_time_elapsed_ms / 1000
+
+    -- Define a threshold for pause detection (e.g., if real-world time is 5 seconds or more ahead of in-game time)
+    local pause_threshold_sec = 5
+
+    -- Check if blocks were actually processed since the last check AND check for significant pause
     if current_processed_blocks > processed_at_last_check then
-        local blocks_processed_this_check = current_processed_blocks - processed_at_last_check
-        blocks_since_last_speed_check = blocks_since_last_speed_check + blocks_processed_this_check
+        -- Check for significant pause (if real-world time is much larger than in-game time elapsed)
+        if real_world_time_elapsed_sec > in_game_time_elapsed_sec + pause_threshold_sec then
+             -- Pause detected
+             flex.send("Pause detected. Skipping speed calculation for this period.", colors.orange)
+             -- Perform self-correction by moving to current perceived coordinates
+             flex.send("Performing self-correction to re-sync position.", colors.yellow)
+             local current_pos = dig.location() -- Get current perceived location
+             if current_pos and #current_pos >= 4 then
+                 -- Use dig.goto to move to the current perceived location.
+                 -- This will use dig.lua's movement functions, triggering checks.
+                 dig.goto(current_pos[1], current_pos[2], current_pos[3], current_pos[4])
+                 flex.send("Self-correction complete.", colors.lightBlue)
+             else
+                  flex.send("Self-correction failed: Could not get current position.", colors.red)
+             end
 
-        -- Check if threshold is met for speed recalculation
-        if blocks_since_last_speed_check >= speed_check_threshold then
-            local current_epoch_time_ms = os.epoch("local") or 0
-            local time_elapsed_ms = current_epoch_time_ms - time_of_last_speed_check
+             -- Reset speed learning timers and counters after a pause and correction
+             blocks_since_last_speed_check = 0
+             time_of_last_speed_check = current_epoch_time_ms
+             time_of_last_in_game_check = current_in_game_time_sec
+             processed_at_last_check = current_processed_blocks -- Update processed blocks after potential movement
+        else
+            -- No significant pause, proceed with speed calculation
+            local blocks_processed_this_check = current_processed_blocks - processed_at_last_check
+            blocks_since_last_speed_check = blocks_since_last_speed_check + blocks_processed_this_check
 
-            -- Avoid division by zero or very small times
-            if type(time_elapsed_ms) == 'number' and time_elapsed_ms > 0 then
-                local current_period_bps = blocks_since_last_speed_check / (time_elapsed_ms / 1000) -- Calculate speed for this period in blocks per second
-                -- Check against math.huge and -math.huge as values, AND check for NaN using self-comparison
-                 if type(current_period_bps) == 'number' and current_period_bps ~= math.huge and current_period_bps ~= -math.huge and current_period_bps == current_period_bps then -- **CORRECTED: Replaced not math.nan() with self-comparison**
-                     -- Simple averaging: average the new rate with the existing average
-                     avg_blocks_per_second = (avg_blocks_per_second + current_period_bps) / 2
-                 else
-                      print("DEBUG: current_period_bps is not a valid number for averaging (NaN, +Inf, or -Inf). Value: " .. tostring(current_period_bps)) -- Added debug print
-                 end
-            else
-                -- If no time has elapsed or time is invalid, do not calculate or update speed for this period.
-                 print("DEBUG: Skipping speed calculation due to zero or invalid time_elapsed_ms (" .. tostring(time_elapsed_ms) .. ").") -- Added debug print
+            -- Check if threshold is met for speed recalculation
+            if blocks_since_last_speed_check >= speed_check_threshold then
+                -- Avoid division by zero or very small times
+                if type(real_world_time_elapsed_sec) == 'number' and real_world_time_elapsed_sec > 0 then
+                    local current_period_bps = blocks_since_last_speed_check / real_world_time_elapsed_sec -- Calculate speed for this period in blocks per second
+                     -- Check against math.huge and -math.huge as values, AND check for NaN using self-comparison
+                     if type(current_period_bps) == 'number' and current_period_bps ~= math.huge and current_period_bps ~= -math.huge and current_period_bps == current_period_bps then -- **CORRECTED: Replaced not math.nan() with self-comparison**
+                         -- Simple averaging: average the new rate with the existing average
+                         avg_blocks_per_second = (avg_blocks_per_second + current_period_bps) / 2
+                     else
+                          print("DEBUG: current_period_bps is not a valid number for averaging (NaN, +Inf, or -Inf). Value: " .. tostring(current_period_bps)) -- Added debug print
+                     end
+                else
+                    -- If no real-world time has elapsed or time is invalid, do not calculate or update speed for this period.
+                     print("DEBUG: Skipping speed calculation due to zero or invalid real_world_time_elapsed_sec (" .. tostring(real_world_time_elapsed_sec) .. ").") -- Added debug print
+                end
+
+                -- Reset for the next speed check period
+                blocks_since_last_speed_check = 0
+                time_of_last_speed_check = current_epoch_time_ms -- Start next period real-world timer from now
+                time_of_last_in_game_check = current_in_game_time_sec -- Start next period in-game timer from now
+
             end
-
-
-            -- Reset for the next speed check period
-            blocks_since_last_speed_check = 0
-            time_of_last_speed_check = current_epoch_time_ms -- Start next period timer from now
-
         end
     end
-    -- Update processed_at_last_check for the next checkProgress call
+    -- Update processed_at_last_check for the next checkProgress call, regardless of pause
     processed_at_last_check = current_processed_blocks
 
 
@@ -547,7 +643,7 @@ end --function
 
 local function checkAll(n)
  checkNewLayer()
- checkProgress() -- checkProgress calls status send logic and speed learning
+ checkProgress() -- checkProgress calls status send logic and speed learning (with pause detection)
  checkFuel()
  checkInv()
  checkHalt() -- checkHalt also uses skip
@@ -562,13 +658,13 @@ end --function
 --       |  | |  |  ][  | \ |         --
 --      |||| |||| [__] || \|         --
 ---------------------------------------
--- |¯\ |¯\  /¯\   /¯¯] |¯\  /\  |\/| --
--- | / | / | O | | [¯| | / |  | |  | --
--- ||  | \  \_/   \__| | \ |||| |||| --
----------------------------------------
+-- ||    /¯\   /¯\  |¯\ --
+-- ||_  | O | | O | | / --
+-- |__]  \_/   \_/  ||  --
+--------------------------
 
 local a,b,c,x,y,z,r,loc
-local xdir, zdir = 1, 1
+local xdir = 1 -- Start moving along +X for the first row traversal pattern
 
 turtle.select(1)
 if reloaded then
@@ -576,83 +672,96 @@ if reloaded then
  flex.send("Resuming "..tostring(zmax).."x"
    ..tostring(xmax).." quarry",colors.yellow)
 
- if dig.gety()==dig.getymin() and dig.gety()~=0 then
-  zdir = dig.getzlast()
-  if zdir == 0 then zdir = 1 end
-  xdir = dig.getxlast()
-  if xdir == 0 then xdir = 1 end
+ -- When reloading, determine the current xdir and zdir based on saved position/rotation
+ local saved_r = dig.getr() % 360
+ -- Simple attempt to determine xdir/zdir based on facing direction after reload
+ if saved_r == 0 or saved_r == 180 then -- Facing North (+Z) or South (-Z)
+     -- Likely in a Z traversal row
+     -- Determine zdir based on where it is relative to zmax/zmin (should be moving towards the other boundary)
+     if dig.getz() >= zmax -1 and saved_r == 0 then zdir = -1 -- Hit Z max, should turn back South
+     elseif dig.getz() <= 0 and saved_r == 180 then zdir = 1 -- Hit Z min, should turn back North
+     else zdir = (saved_r == 0) and 1 or -1 -- Otherwise, continue in current Z direction
+     end
+     -- Determine xdir based on the X coordinate (which "column" it's in)
+     -- Assuming the pattern alternates X direction every xmax Z-traversals (every full row)
+     -- This is complex to perfectly restore. Default to 1 for now or require reloading at base.
+      xdir = 1 -- Simplification: may need more complex logic if reloading mid-row transition or mid-X step
+ elseif saved_r == 90 then -- Facing East (+X)
+     -- This orientation is typically only used for stepping between rows along X
+      zdir = 1 -- Should be about to start a +Z row or just finished one
+      xdir = 1 -- Should be moving along +X
+ elseif saved_r == 270 then -- Facing West (-X)
+      zdir = 1 -- Should be about to start a +Z row or just finished one
+      xdir = -1 -- Should be moving along -X
+ end
+ -- Need to ensure zdir is correctly set for the start of the next row traversal loop
 
-  if dig.getr() >= 360 then
-   -- This encodes whether or not the turtle has
-   --  started a new layer if at the edge
-   xdir = -xdir
-   newlayer = true
+ else
+  flex.send("Starting "..tostring(zmax).."x"
+    ..tostring(xmax).." quarry",colors.yellow)
+
+  if skip > 0 then
+   flex.send("Skipping "..tostring(skip)
+     .."m", colors.lightGray)
   end --if
 
- else
-  gotoBase()
-  if dodumps then dig.doDumpDown() end
-  dig.dropNotFuel()
-  dig.gotor(0)
-  checkFuel()
-  -- skip is used here
-  dig.gotoy(math.min(dig.getymin() or 0,-skip)) -- Corrected: go to min y or skip depth, handle nil
- end --if
+  if depth_arg ~= nil then -- Check if depth_arg was provided
+   flex.send("Going "..tostring(depth_arg)
+     .."m deep", colors.lightGray)
+  else
+   flex.send("To bedrock!",colors.lightGray)
+  end --if/else
 
-else
+  -- Initial descent to skip depth
+  print("DEBUG: Before initial descent loop. dig.gety(): " .. tostring(dig.gety()) .. ", -skip: " .. tostring(-skip)) -- Debug print kept
+  -- Reset speed learning timer and counter before descent
+  blocks_since_last_speed_check = 0
+  time_of_last_speed_check = os.epoch("local") or 0
+  time_of_last_in_game_check = os.time() or 0 -- Initialize in-game time check
 
- flex.send("Starting "..tostring(zmax).."x"
-   ..tostring(xmax).." quarry",colors.yellow)
+  while dig.gety() > -skip do
+   checkFuel()
+   dig.down()
+   if dig.isStuck() then
+    flex.send("Stuck during initial descent! Shutting down",
+      colors.red)
+    shell.run("rm startup.lua")
+    return
+   end --if
+   checkProgress() -- Check progress (and potential pause) during descent
+  end --while
+  print("DEBUG: After initial descent loop. Current Y: "..tostring(dig.gety())) -- Debug print kept
 
- if skip > 0 then
-  flex.send("Skipping "..tostring(skip)
-    .."m", colors.lightGray)
- end --if
+    -- After descent, move to the starting corner (0, -skip, 0) and face North (0)
+    dig.gotoy(-skip) -- Ensure at the correct starting Y after descent
+    dig.gotox(0)
+    dig.gotoz(0)
+    dig.gotor(0) -- Face North (+Z) to start the first row traversal
+    local zdir = 1 -- First row will traverse in the +Z direction
 
- if depth_arg ~= nil then -- Check if depth_arg was provided
-  flex.send("Going "..tostring(depth_arg)
-    .."m deep", colors.lightGray)
- else
-  flex.send("To bedrock!",colors.lightGray)
- end --if/else
+ end --if/else (reloaded)
+
+-- **CORRECTED: Set initial dig.getymax() to the starting Y level**
+-- This is needed for the total_quarry_blocks calculation
+if not reloaded then -- Only set initial ymax if not reloading
+    dig.setymax(dig.gety()) -- Set the starting Y as the max Y
+end
 
 
-end --if/else
-
-
--- Immediately before the descent loop
-print("DEBUG: Before descent loop. dig.gety(): " .. tostring(dig.gety()) .. ", -skip: " .. tostring(-skip)) -- Debug print kept
--- Reset speed learning timer and counter at the start of a new quarry or resume
-blocks_since_last_speed_check = 0
-time_of_last_speed_check = os.epoch("local") or 0
-
-while dig.gety() > -skip do
- checkFuel()
- dig.down()
-
- if dig.isStuck() then
-  flex.send("Co-ordinates lost! Shutting down",
-    colors.red)
-  --rs.delete("startup.lua")
-  return
- end --if
- -- checkReceivedCommand() -- Remove if not doing remote control
-end --while
-print("DEBUG: After descent loop.") -- Debug print kept
-
--- **CORRECTED: Calculate total_quarry_blocks based on the full volume from Y=0 down to ymin**
+-- **CORRECTED: Calculate total_quarry_blocks based on the full volume from Y=ymax down to ymin**
 -- This represents the total number of locations in the quarry.
-local total_quarry_depth_layers = 0 - ymin
+-- The starting Y is dig.getymax(), going down to ymin.
+local total_quarry_depth_layers = dig.getymax() - ymin + 1 -- Corrected to be inclusive of both start and end layers
 total_quarry_blocks = xmax * zmax * total_quarry_depth_layers -- Corrected total blocks calculation
 
 -- Ensure total_quarry_blocks is not negative or zero if dimensions are invalid or mining depth is 0 or less
-if total_quarry_blocks <= 0 then
-    flex.send("Error: Calculated total quarry blocks is <= 0. Check dimensions and skip value.", colors.red)
+if type(total_quarry_blocks) ~= 'number' or total_quarry_blocks <= 0 then
+    flex.send("Error: Calculated total quarry blocks is invalid or <= 0 ("..tostring(total_quarry_blocks).."). Check dimensions and depth.", colors.red)
     shell.run("rm startup.lua")
     return
 end
 
-print("DEBUG: Total quarry blocks calculated (full volume from Y=0 to ymin): "..tostring(total_quarry_blocks))
+print("DEBUG: Total quarry blocks calculated (full volume from Y="..tostring(dig.getymax()).." to ymin="..tostring(ymin).."): "..tostring(total_quarry_blocks))
 
 -- **REMOVED: Code that was adding skipped blocks to dug and processed counts here.**
 -- This is no longer necessary as dig.lua now counts all successful movements.
@@ -672,104 +781,104 @@ local done = false -- 'done' is local to this main loop
 -- Reset speed learning timer and counter at the start of the main loop
 blocks_since_last_speed_check = 0
 time_of_last_speed_check = os.epoch("local") or 0
+time_of_last_in_game_check = os.time() or 0 -- Initialize in-game time check for main loop
 
--- Assuming the inner loop always traverses along the Z axis (length)
-local inner_loop_dimension = zmax
--- Assuming the outer loop moves along the X axis (width) and handles layer changes
-local outer_loop_dimension = xmax
+-- Outer loop: Iterate through layers (from current Y down to ymin)
+while dig.gety() >= ymin and not done and not dig.isStuck() do
 
-while not done and not dig.isStuck() do
- -- checkReceivedCommand() -- Remove if not doing remote control
- turtle.select(1)
+    -- Middle loop: Iterate through rows (xmax times per layer)
+    for row_step = 1, xmax do
 
- -- **MODIFIED: Inner loop to traverse exactly `inner_loop_dimension` steps**
- for step = 1, inner_loop_dimension do
-  -- checkReceivedCommand() -- Remove if not doing remote control
+        -- Determine direction along Z for this row based on xdir and row_step (snake pattern)
+        local current_zdir
+        if xdir == 1 then -- Moving +X, rows alternate +Z and -Z starting with +Z
+            current_zdir = (row_step % 2 == 1) and 1 or -1 -- 1st row +Z, 2nd -Z, etc.
+        elseif xdir == -1 then -- Moving -X, rows alternate +Z and -Z starting with -Z
+             current_zdir = (row_step % 2 == 1) and -1 or 1 -- 1st row -Z, 2nd +Z, etc.
+        end
 
-  checkAll(0) -- checkAll calls checkProgress, which calls status send logic and speed learning
-
-  -- Set rotation based on current Z direction (zdir)
-  if zdir == 1 then dig.gotor(0) -- Face North (+Z)
-  elseif zdir == -1 then dig.gotor(180) -- Face South (-Z)
-  end --if/else
-  checkNewLayer() -- This function seems related to layer changes and rotation, might need review if it causes issues here
-
-  dig.fwd() -- Move one step forward in the current direction
-
-  if dig.isStuck() then
-   done = true
-   break -- Exit the for loop if stuck
-  end --if
-
- end --for (traverse a row)
-
- if done then break end
-
- -- After traversing a row, change Z direction and move to the next row along X
- zdir = -zdir
- newlayer = false
-
- -- Move to the next row along the X axis (outer_loop_dimension)
- -- This logic seems to handle moving one step along X and turning at the edges of the quarry
- if dig.getx()<=0 and xdir==-1 then
-  newlayer = true -- Reached an X boundary, prepare for layer change if needed
- elseif dig.getx()>=outer_loop_dimension-1 and xdir==1 then -- Use outer_loop_dimension (xmax) here
-  newlayer = true -- Reached an X boundary, prepare for layer change if needed
- else
-  checkAll(0) -- Check before moving along X
-  dig.gotox(dig.getx()+xdir) -- Move one step along the X axis
- end --if/else
-
- -- Check if it's time to move down to the next layer
- if newlayer and not dig.isStuck() then
-  xdir = -xdir -- Change X direction for the next layer
-  -- Check if we have reached the target depth
-  if dig.gety() <= ymin then -- Use ymin (target depth) as the condition
-      done = true -- Finished all layers
-      break -- Exit the outer while loop
-  end
-  checkAll(0) -- Check before moving down
-  dig.down() -- Move down to the next layer
-  -- Add print at the start of a new layer
-  flex.printColors("Starting new layer at Y="..tostring(dig.gety()), colors.purple)
-  -- Reset speed learning timer and counter at the start of a new layer
-  blocks_since_last_speed_check = 0
-  time_of_last_speed_check = os.epoch("local") or 0
- end --if
-
-end --while (cuboid dig loop)
+        -- Ensure turtle is oriented correctly at the start of the row traversal
+        if current_zdir == 1 then dig.gotor(0) -- Face North (+Z)
+        elseif current_zdir == -1 then dig.gotor(180) -- Face South (-Z)
+        end
 
 
-flex.send("Digging completed, returning to surface",
-  colors.yellow)
+        -- Inner loop: Traverse the row (zmax times)
+        for z_step = 1, zmax do
+            checkAll(0) -- Perform checks/status updates (includes checkFuel, checkInv, checkHalt, checkProgress)
+
+            -- Move forward one step (digging/moving)
+            dig.fwd()
+
+            if dig.isStuck() then done = true; break end -- Exit inner loop if stuck
+        end -- for z_step
+
+        if done then break end -- Exit middle loop if stuck
+
+        -- After traversing a row, move one step along X (unless it's the last row)
+        if row_step < xmax then
+            checkAll(0) -- Checks before moving along X (includes checkFuel, checkInv, checkHalt, checkProgress)
+            -- Determine rotation to move along X based on xdir
+            if xdir == 1 then dig.gotor(90) -- Face East (+X)
+            elseif xdir == -1 then dig.gotor(270) -- Face West (-X)
+            end
+            dig.fwd() -- Move one step along X
+             if dig.isStuck() then done = true; break end -- Exit middle loop if stuck
+        end
+
+    end -- for row_step
+
+    if done then break end -- Exit outer loop if stuck
+
+    -- After completing all rows in a layer, move down to the next layer
+    xdir = -xdir -- Reverse X direction for the next layer's stepping pattern
+    if dig.gety() > ymin then -- Only move down if not at the minimum Y
+         checkAll(0) -- Checks before moving down (includes checkFuel, checkInv, checkHalt, checkProgress)
+         dig.down()
+          if dig.isStuck() then done = true; break end -- Exit outer loop if stuck
+         flex.printColors("Starting new layer at Y="..tostring(dig.gety()), colors.purple)
+         -- Reset speed learning timer and counter at the start of a new layer
+         blocks_since_last_speed_check = 0
+         time_of_last_speed_check = os.epoch("local") or 0
+         time_of_last_in_game_check = os.time() or 0 -- Initialize in-game time check for new layer
+    end
+
+end -- while layer
+
+
+if dig.isStuck() then
+    flex.send("Quarry stopped due to being stuck.", colors.red)
+else
+    flex.send("Digging completed, returning to surface", colors.yellow)
+end
+
 sendStatus() -- Send final status update
+
+-- Return to base after completing quarry or getting stuck
 gotoBase()
 
-flex.send("Descended "..tostring(-(dig.getymin() or 0)).. -- Handle nil for dig.getymin
-    "m total",colors.green)
-flex.send("Dug "..tostring(dig.getdug() or 0).. -- Handle nil for dig.getdug
-    " blocks total",colors.lightBlue)
+-- Operations at base after going there
+turtle.select(dig.getBlockSlot() or 2) -- Select block slot (default to 2 if not set)
+if turtle.getItemCount(turtle.getSelectedSlot()) > 0 and dig.isBuildingBlock(turtle.getSelectedSlot()) then
+    -- We are at (0,0,0) facing South (180) after gotoBase
+    -- No need to move again, just place down if at Y=0
+    if dig.gety() == 0 then
+         dig.placeDown() -- Place block at origin
+         flex.send("Placed origin marker at 0,0,0", colors.lightGray)
+    end
+end
+turtle.select(1) -- Select fuel slot
 
--- Final status send upon completion (redundant if called before gotoBase, but harmless)
--- sendStatus()
-
-
-for x=1,16 do
- if dig.isBuildingBlock(x) then
-  turtle.select(x)
-  dig.placeDown()
-  break
- end --if
-end --for
-turtle.select(1)
 
 if dodumps then
- dig.gotor(0)
- dig.doDump()
- dig.gotor(180)
+ dig.gotor(0) -- Face North at base (0,0,0) for dumping area
+ dig.doDump() -- Dump forward (North)
+ -- No need to turn 180 back if the base is handled correctly by gotoBase/returnFromBase
+ -- dig.gotor(180)
 end
-dig.dropNotFuel()
-dig.gotor(0)
+dig.dropNotFuel() -- Drop other items into chest at base (should be North)
+dig.gotor(180) -- Face South again at base
+
 
 dig.clearSave()
 flex.modemOff() -- Keep this to close the modem even if not used for remote control

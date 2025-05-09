@@ -1,6 +1,5 @@
 -- This is an API for digging and
 -- keeping track of motion
--- <Flexico64@gmail.com>
 
 -- x is right, y is up, z is forward
 -- r is clockwise rotation in degrees
@@ -347,7 +346,6 @@ if #args > 0 then
   end --if/else save/load
   return
 end --function
-
 
 -----------------------------------------
 -- ||   /¯\\  /¯] /\\ [¯¯][¯¯] /¯\\ |\\ || --
@@ -714,11 +712,10 @@ function up(n)
   for x=1, n do
   refuel()
 
-  -- **MODIFIED: Increment dugtotal and blocks_processed_total on successful move (dig or empty)**
+  -- **MODIFIED: Only increment blocks_processed_total on successful move**
   if turtle.up() then
       update("up")
-      dugtotal = dugtotal + 1 -- Count successful move as dug/processed
-      addBlocksProcessed(1) -- Count successful move as processed
+      blocks_processed_total = blocks_processed_total + 1 -- Count successful move as processed
   else
 
     if doblacklist then
@@ -736,7 +733,7 @@ function up(n)
     while not turtle.up() do
     a,b = turtle.digUp()
     while a do
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      dugtotal = dugtotal + 1 -- **CORRECTED: Increment dugtotal here on successful dig**
       -- addBlocksProcessed(1) -- Removed here, handled by successful move below
       -- Item pickup is handled by turtle.digUp() if successful and space is available.
       a,b = turtle.digUp()
@@ -765,7 +762,7 @@ function up(n)
       return false
     end --if
     if a then
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      dugtotal = dugtotal + 1 -- **CORRECTED: Also increment dugtotal here for a single successful dig**
       -- addBlocksProcessed(1) -- Removed here, handled by successful move below
     end --if
     if attack then turtle.attackUp() end
@@ -802,11 +799,10 @@ function down(n)
   for x=1, n do
   refuel()
 
-  -- **MODIFIED: Increment dugtotal and blocks_processed_total on successful move (dig or empty)**
+  -- **MODIFIED: Only increment blocks_processed_total on successful move**
   if turtle.down() then
       update("down")
-      dugtotal = dugtotal + 1 -- Count successful move as dug/processed
-      addBlocksProcessed(1) -- Count successful move as processed
+      blocks_processed_total = blocks_processed_total + 1 -- Count successful move as processed
   else
 
     if doblacklist then
@@ -824,7 +820,7 @@ function down(n)
     while not turtle.down() do
     a,b = turtle.digDown()
     while a do
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      dugtotal = dugtotal + 1 -- **CORRECTED: Increment dugtotal here on successful dig**
       -- addBlocksProcessed(1) -- Removed here, handled by successful move below
       -- Item pickup is handled by turtle.digDown() if successful and space is available.
       a,b = turtle.digDown()
@@ -853,7 +849,7 @@ function down(n)
       return false
     end --if
     if a then
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      dugtotal = dugtotal + 1 -- **CORRECTED: Also increment dugtotal here for a single successful dig**
       -- addBlocksProcessed(1) -- Removed here, handled by successful move below
     end --if
     if attack then turtle.attackDown() end
@@ -889,11 +885,10 @@ function fwd(n)
   for x=1, n do
   refuel()
 
-  -- **MODIFIED: Increment dugtotal and blocks_processed_total on successful move (dig or empty)**
+  -- **MODIFIED: Only increment blocks_processed_total on successful move**
   if turtle.forward() then
       update("fwd")
-      dugtotal = dugtotal + 1 -- Count successful move as dug/processed
-      addBlocksProcessed(1) -- Count successful move as processed
+      blocks_processed_total = blocks_processed_total + 1 -- Count successful move as processed
   else
 
     if doblacklist then
@@ -937,7 +932,7 @@ function fwd(n)
     while not turtle.forward() do
     a,b = turtle.dig()
     while a do
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      dugtotal = dugtotal + 1 -- **CORRECTED: Increment dugtotal here on successful dig**
       -- addBlocksProcessed(1) -- Removed here, handled by successful move below
       -- Item pickup is handled by turtle.dig() if successful and space is available.
       a,b = turtle.dig()
@@ -980,7 +975,7 @@ function fwd(n)
     end --if
 
     if a then
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      dugtotal = dugtotal + 1 -- **CORRECTED: Also increment dugtotal here for a single successful dig**
       -- addBlocksProcessed(1) -- Removed here, handled by successful move below
     end --if
     if attack then turtle.attack() end
@@ -1015,11 +1010,10 @@ function back(n)
   local x,turn
   turn = false
   for x=1,n do
-  -- **MODIFIED: Increment dugtotal and blocks_processed_total on successful move**
+  -- **MODIFIED: Only increment blocks_processed_total on successful move**
   if turtle.back() then
       update("back")
-      dugtotal = dugtotal + 1 -- Count successful move as dug/processed
-      addBlocksProcessed(1) -- Count successful move as processed
+      blocks_processed_total = blocks_processed_total + 1 -- Count successful move as processed
   else
     turn = true
     gotor(rdist+180)
@@ -1040,21 +1034,21 @@ function dig(x)
 
   if x=="fwd" then
   while turtle.dig() and not stuck do
-    dugtotal = dugtotal + 1 -- Keep this increment here, as this counts successful *dig attempts*, not necessarily movement into the space. A dig might fail or yield no block.
+    dugtotal = dugtotal + 1 -- **CORRECTED: Keep this increment here on successful dig**
     -- addBlocksProcessed(1) -- Removed here, handled by successful move (into the dug space) in fwd()
     -- Item pickup is handled by turtle.dig() if successful and space is available.
   end --while
 
   elseif x=="up" then
   while turtle.digUp() and not stuck do
-    dugtotal = dugtotal + 1 -- Keep this increment here
+    dugtotal = dugtotal + 1 -- **CORRECTED: Keep this increment here on successful dig**
     -- addBlocksProcessed(1) -- Removed here, handled by successful move (into the dug space) in up()
     -- Item pickup is handled by turtle.digUp() if successful and space is available.
   end --while
 
   elseif x=="down" then
   while turtle.digDown() and not stuck do
-    dugtotal = dugtotal + 1 -- Keep this increment here
+    dugtotal = dugtotal + 1 -- **CORRECTED: Keep this increment here on successful dig**
     -- addBlocksProcessed(1) -- Removed here, handled by successful move (into the dug space) in down()
     -- Item pickup is handled by turtle.digDown() if successful and space is available.
   end --while
@@ -1360,7 +1354,7 @@ end
 ---------------------------------------
 --   /¯]|¯¯]/¯¯\\/¯¯\\[¯¯]|\\ || /¯¯]   --
 --  | [ | ] \\_¯\\\_¯\\ ][ | \\ || [¯|   --
---   \\_]|__]\\__/\\__/\\[__]|\\|\\ \\__|   --
+--  \\_]|__]\\__/\\__/\\[__]|\\|\\ \\__|   --
 ---------------------------------------
 
 fuelSlot = {1,16}
@@ -1576,19 +1570,21 @@ function dropNotFuel()
 
   -- Drop off what's not fuel
   blocksPresent = blockStacks
-  for x=1,16 do
+  for x=4,16 do -- Start from slot 4, assuming 1-3 are fuel/blocks/torches based on stairs.lua, adjust if needed
   turtle.select(x)
-  if not turtle.refuel(0) then
-    if flex.isItem(options["buildingblocks"]) then
-    if blocksPresent <= 0 then
-      turtle.drop()
-    else
-      blocksPresent = blocksPresent - 1
-    end --if/else
-    else
-    turtle.drop()
-    end --if/else
-  end --if
+  -- Check if the item is not fuel, not a building block we want to keep, and is a dump item or we want to drop everything else
+  if not turtle.refuel(0) and (not flex.isItem(options["buildingblocks"]) or (flex.isItem(options["buildingblocks"]) and blocksPresent <= 0)) then
+      if flex.isItem(options["dump"]) or not flex.isItem(options["buildingblocks"]) then -- If it's a dump item or not a building block, consider dropping
+           if blocksPresent <= 0 then -- If we have enough building blocks, drop excess
+                turtle.drop()
+            else -- If we still need building blocks, and this is one, keep it
+                -- Do nothing, keep the block
+            end
+       else -- Not a dump item and not a building block
+           turtle.drop() -- Drop everything else that isn't fuel or a needed building block
+       end
+  end --if not fuel
+  if flex.isItem(options["buildingblocks"]) then blocksPresent = blocksPresent - 1 end -- Decrement blocksPresent if the item was a building block (whether dropped or kept)
   end --for
   checkBlocks()
   turtle.select(1)
