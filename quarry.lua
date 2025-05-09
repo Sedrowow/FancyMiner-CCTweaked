@@ -274,9 +274,9 @@ end --function checkFuel()
 
 -- Variables for status sending interval (DEFINED OUTSIDE any function)
 -- Use os.epoch("utc") for a precise, real-world time-based timestamp in milliseconds for sending
-local last_status_sent_time = os.epoch("utc") or 0 -- Initialize defensively with epoch time in milliseconds
+local last_status_sent_time = os.epoch("local") or 0 -- Initialize defensively with epoch time in milliseconds
 -- Status send interval in milliseconds (4 seconds = 10000 milliseconds)
-local status_send_interval = 4 * 1000 -- Send status every 10 seconds (in milliseconds)
+local status_send_interval = 4 * 1000 -- Send status every 4 seconds (in milliseconds)
 
 -- Variables for ETA calculation and speed learning
 -- total_quarry_blocks is calculated after initial descent
