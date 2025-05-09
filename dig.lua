@@ -1,6 +1,6 @@
 -- This is an API for digging and
 -- keeping track of motion
-
+-- <Flexico64@gmail.com>
 
 -- x is right, y is up, z is forward
 -- r is clockwise rotation in degrees
@@ -540,7 +540,7 @@ end --function
 
 -------------------------------------
 --[¯¯]|¯\\ /\\  /¯]||//[¯¯]|\\ || /¯¯]--
--- || | /|  || [ | <  ][ | \\ || [¯|--
+-- || | /|  || [ | <  ][ | \\ | ||  --
 -- || | \\|||| \\_]|\\\\\[__]|| \\| \\__|--
 -------------------------------------
 
@@ -677,7 +677,7 @@ function left(n)
   turtle.turnLeft()
   update("left")
   end --if
-  addBlocksProcessed(n) -- Added: Count turns as processed blocks (approximate)
+  -- Rotations don't represent processed blocks in the same way as linear movement
   return true
 end --function
 
@@ -692,7 +692,7 @@ function right(n)
   turtle.turnRight()
   update("right")
   end --if
-  addBlocksProcessed(n) -- Added: Count turns as processed blocks (approximate)
+  -- Rotations don't represent processed blocks in the same way as linear movement
   return true
 end --function
 
@@ -714,7 +714,12 @@ function up(n)
   for x=1, n do
   refuel()
 
-  if not turtle.up() then
+  -- **MODIFIED: Increment dugtotal and blocks_processed_total on successful move (dig or empty)**
+  if turtle.up() then
+      update("up")
+      dugtotal = dugtotal + 1 -- Count successful move as dug/processed
+      addBlocksProcessed(1) -- Count successful move as processed
+  else
 
     if doblacklist then
     -- Blocks not to mine
@@ -731,8 +736,8 @@ function up(n)
     while not turtle.up() do
     a,b = turtle.digUp()
     while a do
-      dugtotal = dugtotal + 1
-      addBlocksProcessed(1) -- Added: Count successful digs as processed blocks
+      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
       -- Item pickup is handled by turtle.digUp() if successful and space is available.
       a,b = turtle.digUp()
     end --while
@@ -760,8 +765,8 @@ function up(n)
       return false
     end --if
     if a then
-      dugtotal = dugtotal + 1
-      addBlocksProcessed(1) -- Added: Count successful digs as processed blocks
+      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
     end --if
     if attack then turtle.attackUp() end
 
@@ -778,8 +783,7 @@ function up(n)
 
   end --if can't move
 
-  update("up")
-  addBlocksProcessed(1) -- Added: Count successful move as a processed block
+  -- Removed addBlocksProcessed(1) here, handled above in the successful move check
   end --for
 
   return true
@@ -798,7 +802,12 @@ function down(n)
   for x=1, n do
   refuel()
 
-  if not turtle.down() then
+  -- **MODIFIED: Increment dugtotal and blocks_processed_total on successful move (dig or empty)**
+  if turtle.down() then
+      update("down")
+      dugtotal = dugtotal + 1 -- Count successful move as dug/processed
+      addBlocksProcessed(1) -- Count successful move as processed
+  else
 
     if doblacklist then
     -- Blocks not to mine
@@ -815,8 +824,8 @@ function down(n)
     while not turtle.down() do
     a,b = turtle.digDown()
     while a do
-      dugtotal = dugtotal + 1
-      addBlocksProcessed(1) -- Added: Count successful digs as processed blocks
+      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
       -- Item pickup is handled by turtle.digDown() if successful and space is available.
       a,b = turtle.digDown()
     end --while
@@ -844,8 +853,8 @@ function down(n)
       return false
     end --if
     if a then
-      dugtotal = dugtotal + 1
-      addBlocksProcessed(1) -- Added: Count successful digs as processed blocks
+      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
     end --if
     if attack then turtle.attackDown() end
 
@@ -862,8 +871,7 @@ function down(n)
 
   end --if can't move
 
-  update("down")
-  addBlocksProcessed(1) -- Added: Count successful move as a processed block
+  -- Removed addBlocksProcessed(1) here, handled above in the successful move check
   end --for
 
   return true
@@ -881,7 +889,12 @@ function fwd(n)
   for x=1, n do
   refuel()
 
-  if not turtle.forward() then
+  -- **MODIFIED: Increment dugtotal and blocks_processed_total on successful move (dig or empty)**
+  if turtle.forward() then
+      update("fwd")
+      dugtotal = dugtotal + 1 -- Count successful move as dug/processed
+      addBlocksProcessed(1) -- Count successful move as processed
+  else
 
     if doblacklist then
     -- Blocks not to mine
@@ -924,8 +937,8 @@ function fwd(n)
     while not turtle.forward() do
     a,b = turtle.dig()
     while a do
-      dugtotal = dugtotal + 1
-      addBlocksProcessed(1) -- Added: Count successful digs as processed blocks
+      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
       -- Item pickup is handled by turtle.dig() if successful and space is available.
       a,b = turtle.dig()
     end --while
@@ -967,8 +980,8 @@ function fwd(n)
     end --if
 
     if a then
-      dugtotal = dugtotal + 1
-      addBlocksProcessed(1) -- Added: Count successful digs as processed blocks
+      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
+      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
     end --if
     if attack then turtle.attack() end
 
@@ -985,8 +998,7 @@ function fwd(n)
 
   end --if can't move
 
-  update("fwd")
-  addBlocksProcessed(1) -- Added: Count successful move as a processed block
+  -- Removed addBlocksProcessed(1) here, handled above in the successful move check
   end --if
 
   return true
@@ -1003,16 +1015,17 @@ function back(n)
   local x,turn
   turn = false
   for x=1,n do
-  if turn then
-    if not fwd() then return false end
-  elseif turtle.back() then
-    update("back")
-    addBlocksProcessed(1) -- Added: Count successful move as a processed block
+  -- **MODIFIED: Increment dugtotal and blocks_processed_total on successful move**
+  if turtle.back() then
+      update("back")
+      dugtotal = dugtotal + 1 -- Count successful move as dug/processed
+      addBlocksProcessed(1) -- Count successful move as processed
   else
     turn = true
     gotor(rdist+180)
     if not fwd() then return false end
   end --if/else
+  -- Removed addBlocksProcessed(1) here, handled above in the successful move check
   end --for
 
   if turn then gotor(rdist-180) end
@@ -1027,22 +1040,22 @@ function dig(x)
 
   if x=="fwd" then
   while turtle.dig() and not stuck do
-    dugtotal = dugtotal + 1
-    addBlocksProcessed(1) -- Added: Count successful digs as processed blocks
+    dugtotal = dugtotal + 1 -- Keep this increment here, as this counts successful *dig attempts*, not necessarily movement into the space. A dig might fail or yield no block.
+    -- addBlocksProcessed(1) -- Removed here, handled by successful move (into the dug space) in fwd()
     -- Item pickup is handled by turtle.dig() if successful and space is available.
   end --while
 
   elseif x=="up" then
   while turtle.digUp() and not stuck do
-    dugtotal = dugtotal + 1
-    addBlocksProcessed(1) -- Added: Count successful digs as processed blocks
+    dugtotal = dugtotal + 1 -- Keep this increment here
+    -- addBlocksProcessed(1) -- Removed here, handled by successful move (into the dug space) in up()
     -- Item pickup is handled by turtle.digUp() if successful and space is available.
   end --while
 
   elseif x=="down" then
   while turtle.digDown() and not stuck do
-    dugtotal = dugtotal + 1
-    addBlocksProcessed(1) -- Added: Count successful digs as processed blocks
+    dugtotal = dugtotal + 1 -- Keep this increment here
+    -- addBlocksProcessed(1) -- Removed here, handled by successful move (into the dug space) in down()
     -- Item pickup is handled by turtle.digDown() if successful and space is available.
   end --while
 
@@ -1098,7 +1111,7 @@ function place()
   if turtle.getSelectedSlot() == blockSlot then
   checkBlocks()
   end --if
-  addBlocksProcessed(1) -- Added: Count successful placement as a processed block (approximate)
+  -- Placing a block doesn't process a quarry location, so no increment here.
   return true
 end --function
 
@@ -1132,7 +1145,7 @@ function placeUp()
   if turtle.getSelectedSlot == blockSlot then
   checkBlocks()
   end --if
-    addBlocksProcessed(1) -- Added: Count successful placement as a processed block (approximate)
+  -- Placing a block doesn't process a quarry location, so no increment here.
   return true
 end --function
 
@@ -1169,7 +1182,7 @@ function placeDown()
   if turtle.getSelectedSlot() == blockSlot then
   checkBlocks()
   end --if
-    addBlocksProcessed(1) -- Added: Count successful placement as a processed block (approximate)
+  -- Placing a block doesn't process a quarry location, so no increment here.
   return true
 end --function
 
@@ -1203,6 +1216,7 @@ function gotor(r)
   return false
   end --if/else
 
+  -- Rotations don't represent processed blocks in the same way as linear movement
   return true
 end --function
 
@@ -1231,30 +1245,38 @@ function gotox(x)
   end --if
 
   if xdist < x then
-  if rdist == 270 then
-    -- Assume each step back and then forward processes 2 blocks worth of movement
-    addBlocksProcessed((x-xdist) * 2) -- Added
-    return back(x-xdist)
-
-  else
-    gotor(90)
-    -- Assume each step forward processes 1 block worth of movement
-    addBlocksProcessed(x-xdist) -- Added
-    return fwd(x-xdist)
+  if rdist%360 == 270 then -- Facing West, need to go East
+    gotor(90) -- Turn East
+    -- Assume each step forward processes 1 block worth of movement in that direction
+    while xdist < x do -- Move East until x is reached
+        if not fwd() then return false end
+    end
+    return true
+  else -- Not facing West, need to go East
+    gotor(90) -- Turn East
+    -- Assume each step forward processes 1 block worth of movement in that direction
+    while xdist < x do -- Move East until x is reached
+        if not fwd() then return false end
+    end
+    return true
   end
   end
 
   if xdist > x then
-  if rdist == 90 then
-    -- Assume each step back and then forward processes 2 blocks worth of movement
-    addBlocksProcessed((xdist-x) * 2) -- Added
-    return back(xdist-x)
-
-  else
-    gotor(270)
-    -- Assume each step forward processes 1 block worth of movement
-    addBlocksProcessed(xdist-x) -- Added
-    return fwd(xdist-x)
+  if rdist%360 == 90 then -- Facing East, need to go West
+    gotor(270) -- Turn West
+    -- Assume each step forward processes 1 block worth of movement in that direction
+    while xdist > x do -- Move West until x is reached
+        if not fwd() then return false end
+    end
+    return true
+  else -- Not facing East, need to go West
+    gotor(270) -- Turn West
+    -- Assume each step forward processes 1 block worth of movement in that direction
+    while xdist > x do -- Move West until x is reached
+        if not fwd() then return false end
+    end
+    return true
   end
   end
 
@@ -1269,30 +1291,38 @@ function gotoz(z)
   end --if
 
   if zdist < z then
-  if rdist == 180 then
-    -- Assume each step back and then forward processes 2 blocks worth of movement
-    addBlocksProcessed((z-zdist) * 2) -- Added
-    return back(z-zdist)
-
-  else
-    gotor(0)
-    -- Assume each step forward processes 1 block worth of movement
-    addBlocksProcessed(z-zdist) -- Added
-    return fwd(z-zdist)
+  if rdist%360 == 180 then -- Facing South, need to go North
+    gotor(0) -- Turn North
+    -- Assume each step forward processes 1 block worth of movement in that direction
+    while zdist < z do -- Move North until z is reached
+        if not fwd() then return false end
+    end
+    return true
+  else -- Not facing South, need to go North
+    gotor(0) -- Turn North
+    -- Assume each step forward processes 1 block worth of movement in that direction
+    while zdist < z do -- Move North until z is reached
+        if not fwd() then return false end
+    end
+    return true
   end
   end
 
   if zdist > z then
-  if rdist == 0 then
-    -- Assume each step back and then forward processes 2 blocks worth of movement
-    addBlocksProcessed((zdist-z) * 2) -- Added
-    return back(zdist-z)
-
-  else
-    gotor(180)
-    -- Assume each step forward processes 1 block worth of movement
-    addBlocksProcessed(zdist-z) -- Added
-    return fwd(zdist-z)
+  if rdist%360 == 0 then -- Facing North, need to go South
+    gotor(180) -- Turn South
+    -- Assume each step forward processes 1 block worth of movement in that direction
+    while zdist > z do -- Move South until z is reached
+        if not fwd() then return false end
+    end
+    return true
+  else -- Not facing North, need to go South
+    gotor(180) -- Turn South
+    -- Assume each step forward processes 1 block worth of movement in that direction
+    while zdist > z do -- Move South until z is reached
+        if not fwd() then return false end
+    end
+    return true
   end
   end
 
@@ -1501,7 +1531,7 @@ function blockLava(dir)
   turtle.place()
   end --if/else
   turtle.select(slot)
-  addBlocksProcessed(1) -- Added: Count placing a block as a processed block
+  -- Placing a block doesn't process a quarry location, so no increment here.
 end --function
 
 function blockLavaUp() blockLava("up") end

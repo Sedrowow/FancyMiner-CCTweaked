@@ -71,7 +71,8 @@ local function displayStatus()
 
         -- Display the estimated completion time string
         term.setTextColor(colors.white) -- Color for completion time (Keep white or choose another)
-        print("ETA: " .. tostring(last_status.estimated_completion_time or "Calculating..."))
+        print("DONE AT: " .. tostring(last_status.estimated_completion_time or "Calculating..."))
+	print("ETA: " .. tostring(last_status.estimated_time_remaining or "Calculating..."))
 
         -- Display processed vs total blocks for context
         if last_status.total_quarry_blocks ~= nil and last_status.processed_blocks ~= nil then

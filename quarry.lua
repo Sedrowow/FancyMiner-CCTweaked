@@ -3,12 +3,22 @@
 -- cover from a reboot/unload event.
 -- Also avoids destroying spawners!
 
-local log_file = "log.txt"
-local options_file = "flex_options.cfg"
+
+-----------------------------------
+-- [¯¯] || || |¯\ [¯¯] ||   |¯¯] --
+--  ||  ||_|| | /  ||  ||_  | ]  --
+--  ||   \__| | \  ||  |__| |__] --
+-----------------------------------
+--  /¯\  || ||  /\  |¯\ |¯\ \\// --
+-- | O | ||_|| |  | | / | /  \/  --
+--  \_\\  \__| |||| | \ | \  ||  --
+-----------------------------------
+
 os.loadAPI("flex.lua")
 os.loadAPI("dig.lua")
-local modem_channel = 6464
--- local received_command = nil -- Remove if not needed for status only
+local log_file = "log.txt" -- Added log_file variable
+local options_file = "flex_options.cfg" -- Added options_file variable
+local modem_channel = 6464 -- Added modem_channel variable
 
 dig.doBlacklist() -- Avoid Protected Blocks
 dig.doAttack() -- Attack entities that block the way
@@ -29,8 +39,6 @@ if fs.exists(options_file) then
  end --while
  file.close()
 end --if
-
-
 -- Add debug prints around modem initialization
 print("DEBUG: Attempting to initialize modem.")
 local modem -- Make sure modem is declared here, outside of any function
@@ -46,6 +54,7 @@ else
     print("DEBUG: No modem peripheral found during initialization. Status updates disabled.")
     -- The script can still run without a modem, but status updates won't work.
 end
+
 
 local args = {...}
 if #args == 0 then
@@ -124,8 +133,8 @@ end --if
 
 ----------------------------------------------
 -- |¯¯]|| |||\ || /¯][¯¯][¯¯] /¯\ |\ ||/¯¯\\ --
--- | ] ||_||| \\ || [  ||  ][ | O || \\ |\_¯\\ --
--- ||   \\__||| \\| \\_] || [__] \\_/ || \\|\\__/ --
+-- | ] ||_||| \\ || [  ||  ][ | O || \ |\¯\\ --
+-- ||   \__||| \| \_| || [__] \_/ || \|\\__/ --
 ----------------------------------------------
 
 local location
@@ -254,9 +263,9 @@ function checkFuel()
      -- Ensure refuel amount is not nil or non-positive
      local refuel_amount = estimated_fuel_needed * 1.5
      if type(refuel_amount) == 'number' and refuel_amount > 0 then
-        dig.refuel(refuel_amount) -- Refuel to 150% of estimated needed
+       dig.refuel(refuel_amount) -- Refuel to 150% of estimated needed
      else
-        dig.refuel(1000) -- Fallback refuel amount
+       dig.refuel(1000) -- Fallback refuel amount
      end
      flex.send("Fuel acquired! ("..tostring(turtle.getFuelLevel()).." fuel)", colors.lightBlue)
      returnFromBase(loc) -- returnFromBase calls movement, which calls addBlocksProcessed
@@ -264,13 +273,13 @@ function checkFuel()
 end --function checkFuel()
 
 -- Variables for status sending interval (DEFINED OUTSIDE any function)
--- Use os.epoch("local") for a precise, real-world time-based timestamp in milliseconds for sending
-local last_status_sent_time = os.epoch("local") or 0 -- Initialize defensively with epoch time in milliseconds
+-- Use os.epoch("utc") for a precise, real-world time-based timestamp in milliseconds for sending
+local last_status_sent_time = os.epoch("utc") or 0 -- Initialize defensively with epoch time in milliseconds
 -- Status send interval in milliseconds (4 seconds = 4000 milliseconds)
 local status_send_interval = 4 * 1000 -- Send status every 4 seconds (in milliseconds)
 
 -- Variables for ETA calculation and speed learning
--- total_quarry_blocks is calculated after initial descent
+-- total_quarry_blocks is calculated once after initial descent
 local blocks_since_last_speed_check = 0 -- Renamed for clarity
 -- Use os.epoch("local") for speed learning time
 local time_of_last_speed_check = os.epoch("local") or 0 -- Use local time for speed learning
@@ -289,19 +298,27 @@ local function sendStatus()
     local current_processed_blocks = dig.getBlocksProcessed() or 0
     local estimated_remaining_blocks = total_quarry_blocks - current_processed_blocks
 
+    local estimated_time_remaining_seconds = -1 -- Default to -1 if cannot calculate
     local estimated_completion_time_str = "Calculating..."
+    local estimated_time_remaining_duration_str = "Calculating..." -- Added: for remaining duration
 
-    -- Calculate Estimated Completion Time if we have enough info and a valid speed
+    -- Calculate Estimated Time Remaining and Completion Time if we have enough info and a valid speed
     if type(estimated_remaining_blocks) == 'number' and estimated_remaining_blocks > 0 and type(avg_blocks_per_second) == 'number' and avg_blocks_per_second > 0 then
-        local estimated_time_remaining_seconds = estimated_remaining_blocks / avg_blocks_per_second
-        local current_local_epoch_time_sec = (os.epoch("local") or 0) / 1000 -- Get current local time in seconds
-        local estimated_completion_time_sec = current_local_epoch_time_sec + estimated_time_remaining_seconds
+        estimated_time_remaining_seconds = estimated_remaining_blocks / avg_blocks_per_second
 
         -- Format the completion time using the local timezone
-        -- os.date() with a format string and timestamp gives a formatted string
+        local current_local_epoch_time_sec = (os.epoch("local") or 0) / 1000 -- Get current local time in seconds
+        local estimated_completion_time_sec = current_local_epoch_time_sec + estimated_time_remaining_seconds
         estimated_completion_time_str = os.date("%Y-%m-%d %H:%M:%S", estimated_completion_time_sec)
+
+        -- Format the remaining duration as MM:SS
+        local minutes = math.floor(estimated_time_remaining_seconds / 60)
+        local seconds = math.floor(estimated_time_remaining_seconds % 60)
+        estimated_time_remaining_duration_str = string.format("%02d:%02d", minutes, seconds)
+
     elseif total_quarry_blocks > 0 and estimated_remaining_blocks <= 0 then
         estimated_completion_time_str = "Completed" -- Indicate if digging is theoretically done
+        estimated_time_remaining_duration_str = "00:00" -- Duration is zero when completed
     end
 
 
@@ -313,8 +330,8 @@ local function sendStatus()
             table.insert(inventory_summary, { name = item.name, count = item.count })
         end
     end
-    -- Ensure 'done' is accessible or determine mining state differently if 'done' is local to main loop
-    local is_mining_status = not dig.isStuck() -- Infer mining state; assumes mining when not stuck
+    -- Infer mining state; assumes mining when not stuck
+    local is_mining_status = not dig.isStuck()
 
 
     local status_message = {
@@ -324,8 +341,8 @@ local function sendStatus()
         fuel = turtle.getFuelLevel(),
         position = { x = dig.getx(), y = dig.gety(), z = dig.getz(), r = dig.getr() },
         is_mining = is_mining_status, -- Reflect actual mining state
-        -- Estimated time remaining duration is replaced by completion time string
-        estimated_completion_time = estimated_completion_time_str,
+        estimated_completion_time = estimated_completion_time_str, -- Estimated completion date and time
+        estimated_time_remaining = estimated_time_remaining_duration_str, -- Added: Estimated time remaining duration (MM:SS)
         total_quarry_blocks = total_quarry_blocks, -- Send total blocks for context
         dug_blocks = dig.getdug() or 0, -- Still send dug blocks, handle nil
         processed_blocks = current_processed_blocks, -- Send processed blocks for context
@@ -333,7 +350,7 @@ local function sendStatus()
         inventory_summary = inventory_summary -- Include basic inventory summary
     }
 
-    -- Send the status message on a specific channel
+    -- Send the status message on a specific channel (e.g., 6465)
     local status_channel = modem_channel -- Channel for status updates
     if modem then -- Check if modem peripheral is available
         -- print("DEBUG: Attempting to transmit status on channel " .. status_channel) -- NEW DEBUG PRINT before transmit
@@ -344,7 +361,6 @@ local function sendStatus()
         -- print("DEBUG: sendStatus called but modem is nil. Cannot transmit.") -- NEW DEBUG PRINT if modem is nil
     end
 end
-
 
 -- checkProgress function (MODIFIED to call sendStatus and implement speed learning)
 local function checkProgress()
@@ -382,27 +398,22 @@ local function checkProgress()
             local time_elapsed_ms = current_epoch_time_ms - time_of_last_speed_check
 
             -- Avoid division by zero or very small times
-            if type(time_elapsed_ms) == 'number' and time_elapsed_ms > 0 then -- **CORRECTED: Check if time_elapsed_ms is greater than 0**
+            if type(time_elapsed_ms) == 'number' and time_elapsed_ms > 0 then
                 local current_period_bps = blocks_since_last_speed_check / (time_elapsed_ms / 1000) -- Calculate speed for this period in blocks per second
-                -- Check against math.huge and -math.huge as values, not call them as functions
-                 if type(current_period_bps) == 'number' and current_period_bps ~= math.huge and current_period_bps ~= -math.huge and not math.nan(current_period_bps) then -- Check for valid number
+                -- Check against math.huge and -math.huge as values, AND check for NaN using self-comparison
+                 if type(current_period_bps) == 'number' and current_period_bps ~= math.huge and current_period_bps ~= -math.huge and current_period_bps == current_period_bps then -- **CORRECTED: Replaced not math.nan() with self-comparison**
                      -- Simple averaging: average the new rate with the existing average
                      avg_blocks_per_second = (avg_blocks_per_second + current_period_bps) / 2
+                 else
+                      print("DEBUG: current_period_bps is not a valid number for averaging (NaN, +Inf, or -Inf). Value: " .. tostring(current_period_bps)) -- Added debug print
                  end
             else
                 -- If no time has elapsed or time is invalid, do not calculate or update speed for this period.
-                -- Optionally, you could reset blocks_since_last_speed_check and time_of_last_speed_check here
-                -- to avoid accumulating blocks over zero time, but the current logic of only updating
-                -- if blocks were processed should handle this. Let's just skip speed update.
-                 print("DEBUG: Skipping speed calculation due to zero or invalid time_elapsed_ms.") -- Added debug print
+                 print("DEBUG: Skipping speed calculation due to zero or invalid time_elapsed_ms (" .. tostring(time_elapsed_ms) .. ").") -- Added debug print
             end
 
 
-            -- Reset for the next speed check period (This was inside the >0 check before, moving it outside)
-            -- Moved resetting blocks_since_last_speed_check and time_of_last_speed_check outside
-            -- the check for time_elapsed_ms > 0 to ensure they reset after meeting the threshold
-            -- regardless of the instantaneous speed calculation success in this tick.
-            -- The speed update itself is conditional on valid time and bps.
+            -- Reset for the next speed check period
             blocks_since_last_speed_check = 0
             time_of_last_speed_check = current_epoch_time_ms -- Start next period timer from now
 
@@ -459,6 +470,7 @@ local function checkProgress()
 
     -- checkReceivedCommand() -- Remove this if not doing remote control
 end --function checkProgress()
+
 
 local newlayer = false
 function checkNewLayer()
@@ -547,13 +559,13 @@ end --function
 
 
 ---------------------------------------
---      |\/|  /\\  [¯¯] |\\ ||         --
---      |  | |  |  ][  | \\ |         --
---      |||| |||| [__] || \\|         --
+--       |\/|  /\  [¯¯] |\ ||         --
+--       |  | |  |  ][  | \ |         --
+--      |||| |||| [__] || \|         --
 ---------------------------------------
--- |¯\\ |¯\\  /¯\\   /¯¯] |¯\\  /\\  |\/| --
+-- |¯\ |¯\  /¯\   /¯¯] |¯\  /\  |\/| --
 -- | / | / | O | | [¯| | / |  | |  | --
--- ||  | \\  \\_/   \\__| | \\ |||| |||| --
+-- ||  | \  \_/   \__| | \ |||| |||| --
 ---------------------------------------
 
 local a,b,c,x,y,z,r,loc
@@ -598,12 +610,13 @@ else
     .."m", colors.lightGray)
  end --if
 
- if depth < world_height-1 then
-  flex.send("Going "..tostring(-ymin)
+ if depth_arg ~= nil then -- Check if depth_arg was provided
+  flex.send("Going "..tostring(depth_arg)
     .."m deep", colors.lightGray)
  else
   flex.send("To bedrock!",colors.lightGray)
  end --if/else
+
 
 end --if/else
 
@@ -642,15 +655,23 @@ end
 
 print("DEBUG: Total quarry blocks calculated (considering skip): "..tostring(total_quarry_blocks))
 
+-- **CORRECTED: Add skipped blocks to dug and processed counts after descent**
+if skip > 0 then
+    local skipped_blocks_count = xmax * zmax * skip
+    dig.setdug((dig.getdug() or 0) + skipped_blocks_count) -- Add to dug blocks, handle nil
+    dig.setBlocksProcessed((dig.getBlocksProcessed() or 0) + skipped_blocks_count) -- Add to processed blocks, handle nil
+    print("DEBUG: Added "..tostring(skipped_blocks_count).." skipped blocks to total counts.") -- Added debug print
+end
+
 
 --------------------------
--- |\/|  /\\  [¯¯] |\\ || --
--- |  | |  |  ][  | \\ | --
--- |||| |||| [__] || \\| --
+-- |\/|  /\  [¯¯] |\ || --
+-- |  | |  |  ][  | \ | --
+-- |||| |||| [__] || \| --
 --------------------------
--- ||    /¯\\   /¯\\  |¯\\ --
+-- ||    /¯\   /¯\  |¯\ --
 -- ||_  | O | | O | | / --
--- |__]  \\_/   \\_/  ||  --
+-- |__]  \_/   \_/  ||  --
 --------------------------
 
 local done = false -- 'done' is local to this main loop
@@ -665,7 +686,7 @@ while not done and not dig.isStuck() do
  while not done do
   -- checkReceivedCommand() -- Remove if not doing remote control
 
-  checkAll(0) -- checkAll calls checkProgress, which calls status send and speed learning
+  checkAll(0) -- checkAll calls checkProgress, which calls status send logic and speed learning
 
   if dig.getz()<=0 and zdir==-1 then break end
   if dig.getz()>=zmax-1 and zdir==1 then break end
@@ -705,14 +726,14 @@ while not done and not dig.isStuck() do
  elseif dig.getx()>=xmax-1 and xdir==1 then
   newlayer = true
  else
-  checkAll(0) -- checkAll calls checkProgress, which calls status send and speed learning
+  checkAll(0) -- checkAll calls checkProgress, which calls status send logic and speed learning
   dig.gotox(dig.getx()+xdir)
  end --if/else
 
  if newlayer and not dig.isStuck() then
   xdir = -xdir
   if dig.getymin() <= ymin then break end
-  checkAll(0) -- checkAll calls checkProgress, which calls status send and speed learning
+  checkAll(0) -- checkAll calls checkProgress, which calls status send logic and speed learning
   dig.down()
   -- Add print at the start of a new layer
   flex.printColors("Starting new layer at Y="..tostring(dig.gety()), colors.purple)
