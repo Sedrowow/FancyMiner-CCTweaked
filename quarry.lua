@@ -673,62 +673,63 @@ local done = false -- 'done' is local to this main loop
 blocks_since_last_speed_check = 0
 time_of_last_speed_check = os.epoch("local") or 0
 
+-- Assuming the inner loop always traverses along the Z axis (length)
+local inner_loop_dimension = zmax
+-- Assuming the outer loop moves along the X axis (width) and handles layer changes
+local outer_loop_dimension = xmax
+
 while not done and not dig.isStuck() do
  -- checkReceivedCommand() -- Remove if not doing remote control
  turtle.select(1)
 
- while not done do
+ -- **MODIFIED: Inner loop to traverse exactly `inner_loop_dimension` steps**
+ for step = 1, inner_loop_dimension do
   -- checkReceivedCommand() -- Remove if not doing remote control
 
   checkAll(0) -- checkAll calls checkProgress, which calls status send logic and speed learning
 
-  if dig.getz()<=0 and zdir==-1 then break end
-  if dig.getz()>=zmax-1 and zdir==1 then break end
-
-  if zdir == 1 then dig.gotor(0)
-  elseif zdir == -1 then dig.gotor(180)
+  -- Set rotation based on current Z direction (zdir)
+  if zdir == 1 then dig.gotor(0) -- Face North (+Z)
+  elseif zdir == -1 then dig.gotor(180) -- Face South (-Z)
   end --if/else
-  checkNewLayer()
+  checkNewLayer() -- This function seems related to layer changes and rotation, might need review if it causes issues here
 
-  -- Time the fwd movement, which includes digging
-  local start_move_time_ms = os.epoch("local") or 0
-  local initial_dug_before_move = dig.getdug()
-
-  dig.fwd()
-
-  -- Simple approach: If dig.fwd succeeded and dug blocks, count time and blocks
-  -- A more robust method would integrate timing within dig.fwd itself,
-  -- but this adds complexity. Let's rely on checkProgress being called frequently.
-
+  dig.fwd() -- Move one step forward in the current direction
 
   if dig.isStuck() then
    done = true
+   break -- Exit the for loop if stuck
   end --if
 
- end --while (z loop)
+ end --for (traverse a row)
 
  if done then break end
 
+ -- After traversing a row, change Z direction and move to the next row along X
  zdir = -zdir
  newlayer = false
 
- -- Add print at the start of a new row
- flex.printColors("Starting new row at X="..tostring(dig.getx()).." Z="..tostring(dig.getz()).." Layer="..tostring(-dig.gety()), colors.gray)
-
+ -- Move to the next row along the X axis (outer_loop_dimension)
+ -- This logic seems to handle moving one step along X and turning at the edges of the quarry
  if dig.getx()<=0 and xdir==-1 then
-  newlayer = true
- elseif dig.getx()>=xmax-1 and xdir==1 then
-  newlayer = true
+  newlayer = true -- Reached an X boundary, prepare for layer change if needed
+ elseif dig.getx()>=outer_loop_dimension-1 and xdir==1 then -- Use outer_loop_dimension (xmax) here
+  newlayer = true -- Reached an X boundary, prepare for layer change if needed
  else
-  checkAll(0) -- checkAll calls checkProgress, which calls status send logic and speed learning
-  dig.gotox(dig.getx()+xdir)
+  checkAll(0) -- Check before moving along X
+  dig.gotox(dig.getx()+xdir) -- Move one step along the X axis
  end --if/else
 
+ -- Check if it's time to move down to the next layer
  if newlayer and not dig.isStuck() then
-  xdir = -xdir
-  if dig.getymin() <= ymin then break end
-  checkAll(0) -- checkAll calls checkProgress, which calls status send logic and speed learning
-  dig.down()
+  xdir = -xdir -- Change X direction for the next layer
+  -- Check if we have reached the target depth
+  if dig.gety() <= ymin then -- Use ymin (target depth) as the condition
+      done = true -- Finished all layers
+      break -- Exit the outer while loop
+  end
+  checkAll(0) -- Check before moving down
+  dig.down() -- Move down to the next layer
   -- Add print at the start of a new layer
   flex.printColors("Starting new layer at Y="..tostring(dig.gety()), colors.purple)
   -- Reset speed learning timer and counter at the start of a new layer
