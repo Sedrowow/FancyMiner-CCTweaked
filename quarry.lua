@@ -3,7 +3,6 @@
 -- cover from a reboot/unload event.
 -- Also avoids destroying spawners!
 
-
 -----------------------------------
 -- [¯¯] || || |¯\ [¯¯] ||   |¯¯] --
 --  ||  ||_|| | /  ||  ||_  | ]  --
@@ -273,8 +272,8 @@ function checkFuel()
 end --function checkFuel()
 
 -- Variables for status sending interval (DEFINED OUTSIDE any function)
--- Use os.epoch("utc") for a precise, real-world time-based timestamp in milliseconds for sending
-local last_status_sent_time = os.epoch("utc") or 0 -- Initialize defensively with epoch time in milliseconds
+-- Use os.epoch("local") for a precise, real-world time-based timestamp in milliseconds for sending
+local last_status_sent_time = os.epoch("local") or 0 -- Initialize defensively with epoch time in milliseconds
 -- Status send interval in milliseconds (4 seconds = 4000 milliseconds)
 local status_send_interval = 4 * 1000 -- Send status every 4 seconds (in milliseconds)
 
@@ -350,7 +349,7 @@ local function sendStatus()
         inventory_summary = inventory_summary -- Include basic inventory summary
     }
 
-    -- Send the status message on a specific channel (e.g., 6465)
+    -- Send the status message on a specific channel
     local status_channel = modem_channel -- Channel for status updates
     if modem then -- Check if modem peripheral is available
         -- print("DEBUG: Attempting to transmit status on channel " .. status_channel) -- NEW DEBUG PRINT before transmit
@@ -641,10 +640,10 @@ while dig.gety() > -skip do
 end --while
 print("DEBUG: After descent loop.") -- Debug print kept
 
--- Now that the initial descent is done, calculate the total blocks to be mined
-local mining_start_y = dig.gety() -- This is the Y coordinate after skipping (or 0 if no skip)
-local mining_depth_layers = mining_start_y - ymin + 1 -- Number of layers to mine (inclusive)
-total_quarry_blocks = xmax * zmax * mining_depth_layers -- Corrected total blocks calculation
+-- **CORRECTED: Calculate total_quarry_blocks based on the full volume from Y=0 down to ymin**
+-- This represents the total number of locations in the quarry.
+local total_quarry_depth_layers = 0 - ymin + 1
+total_quarry_blocks = xmax * zmax * total_quarry_depth_layers -- Corrected total blocks calculation
 
 -- Ensure total_quarry_blocks is not negative or zero if dimensions are invalid or mining depth is 0 or less
 if total_quarry_blocks <= 0 then
@@ -653,15 +652,10 @@ if total_quarry_blocks <= 0 then
     return
 end
 
-print("DEBUG: Total quarry blocks calculated (considering skip): "..tostring(total_quarry_blocks))
+print("DEBUG: Total quarry blocks calculated (full volume from Y=0 to ymin): "..tostring(total_quarry_blocks))
 
--- **CORRECTED: Add skipped blocks to dug and processed counts after descent**
-if skip > 0 then
-    local skipped_blocks_count = xmax * zmax * skip
-    dig.setdug((dig.getdug() or 0) + skipped_blocks_count) -- Add to dug blocks, handle nil
-    dig.setBlocksProcessed((dig.getBlocksProcessed() or 0) + skipped_blocks_count) -- Add to processed blocks, handle nil
-    print("DEBUG: Added "..tostring(skipped_blocks_count).." skipped blocks to total counts.") -- Added debug print
-end
+-- **REMOVED: Code that was adding skipped blocks to dug and processed counts here.**
+-- This is no longer necessary as dig.lua now counts all successful movements.
 
 
 --------------------------
