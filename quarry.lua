@@ -642,7 +642,7 @@ print("DEBUG: After descent loop.") -- Debug print kept
 
 -- **CORRECTED: Calculate total_quarry_blocks based on the full volume from Y=0 down to ymin**
 -- This represents the total number of locations in the quarry.
-local total_quarry_depth_layers = 0 - ymin + 1
+local total_quarry_depth_layers = 0 - ymin
 total_quarry_blocks = xmax * zmax * total_quarry_depth_layers -- Corrected total blocks calculation
 
 -- Ensure total_quarry_blocks is not negative or zero if dimensions are invalid or mining depth is 0 or less
