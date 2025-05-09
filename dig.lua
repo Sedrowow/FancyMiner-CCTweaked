@@ -1,13 +1,14 @@
 -- This is an API for digging and
 -- keeping track of motion
 
+
 -- x is right, y is up, z is forward
 -- r is clockwise rotation in degrees
 
 -------------------------------------
--- |¯\  [¯¯]  /¯¯]    /\  |¯\ [¯¯] --
--- |  |  ][  | [¯|   |  | | /  ][  --
--- |_/  [__]  \__|   |||| ||  [__] --
+-- |¯\  [¯¯]  /¯¯]    /\  |¯\ [¯¯] --
+-- |  |  ][  | [¯|   |  | | /  ][  --
+-- |_/  [__]  \__|   |||| ||  [__] --
 -------------------------------------
 
 os.loadAPI("flex.lua")
@@ -78,7 +79,7 @@ function resetDumpList(n)
  if n == 0 then
   options[dump] = {}
  else
-  options[dump] = {
+  options[dump] = { 
      "cobblestone", "dirt", "gravel",
      "andesite", "diorite", "granite",
      "netherrack", "soul_s", "magma_block",
@@ -119,11 +120,11 @@ function doDump(z)
  for x=1,16 do
   turtle.select(x)
   if flex.isItem(options[dump]) then
-
+   
    if flex.isItem(options["buildingblocks"]) then
     blockCount = blockCount - 1
    end --if
-
+   
    if blockCount <= 0 then
     if z == "fwd" then
      turtle.drop()
@@ -133,7 +134,7 @@ function doDump(z)
      turtle.dropUp()
     end --if/else (direction)
    end --if (no more blocks needed)
-
+   
   end --if dump item
  end --for
  checkBlocks()
@@ -178,13 +179,13 @@ end --function
 
 
 ------------------------------------
---  /¯\ |¯\[¯¯][¯¯] /¯\ |\ ||/¯¯\ --
--- | O || / ||  ][ | O || \ |\_¯\ --
---  \_/ ||  || [__] \_/ || \|\__/ --
+--  /¯\ |¯\[¯¯][¯¯] /¯\ |\ ||/¯¯\ --
+-- | O || / ||  ][ | O || \ |\_¯\ --
+--  \_/ ||  || [__] \_/ || \|\__/ --
 ------------------------------------
---      |¯¯][¯¯]||  |¯¯]          --
---      | ]  ][ ||_ | ]           --
---      ||  [__]|__]|__]          --
+--      |¯¯][¯¯]||  |¯¯]          --
+--      | ]  ][ ||_ | ]           --
+--      ||  [__]|__]|__]          --
 ------------------------------------
 
 local options_file = "dig_options.cfg"
@@ -200,14 +201,14 @@ function optionsImport()
   return false
  end --if
  local file,x,y,z
-
+ 
  for y=1,#options do
   z = options[y]
   file = fs.open(options_file,"r")
-
+  
   x = file.readLine()
   while x ~= nil do
-
+   
    if x == "["..z.."]" then
     options[z] = {}
     x = file.readLine()
@@ -217,13 +218,13 @@ function optionsImport()
     end --while
     break
    end --if
-
+   
    x = file.readLine()
   end --while
-
+  
   file.close()
  end --for
-
+ 
  return true
 end --function
 
@@ -232,13 +233,13 @@ function optionsExport()
  if fs.exists(options_file) then
   fs.delete(options_file)
  end --if
-
+ 
  local file,x,y,z
  while file == nil do
   file = fs.open(options_file,"w")
  end --while
  file.writeLine("# Dig API Options File #\n")
-
+ 
  for y=1,#options do
   z = options[y]
   file.writeLine("["..z.."]")
@@ -247,7 +248,7 @@ function optionsExport()
   end --for
   file.writeLine("[/"..z.."]\n")
  end --for
-
+ 
  file.close()
  return true
 end --function
@@ -261,13 +262,13 @@ end --if
 
 
 ----------------------------------
---    /¯¯\  /\  ||  || |¯¯]     --
---    \_¯\ |  |  \\//  | ]      --
---    \__/ ||||   \/   |__]     --
+--    /¯¯\  /\  ||  || |¯¯]     --
+--    \_¯\ |  |  \\//  | ]      --
+--    \__/ ||||   \/   |__]     --
 ----------------------------------
--- |¯\  /\   /¯] ||// || || |¯\ --
--- | < |  | | [  | <  ||_|| | / --
--- |_/ ||||  \_] ||\\  \__| ||  --
+-- |¯\  /\   /¯] ||// || || |¯\ --
+-- | < |  | | [  | <  ||_|| | / --
+-- |_/ ||||  \_] ||\\  \__| ||  --
 ----------------------------------
 
 local save = {"dig_save", ".cfg"}
@@ -293,7 +294,7 @@ end --function
 local args = {...}
 if #args > 0 then
  local a,file
-
+ 
  if args[1] == "save" then
   if not saveExists() then
    flex.send("Nothing to save",colors.yellow)
@@ -315,7 +316,7 @@ if #args > 0 then
       save[1].."_"..a..save[2])
   flex.send("Enter 'dig load "..a..
       "' to restore",colors.lightBlue)
-
+  
  elseif args[1] == "load" then
   if #args == 1 then
    flex.send("Please specify load file",
@@ -330,32 +331,32 @@ if #args > 0 then
      save[2].." "..savefile)
   flex.send("Save files restored",
      colors.lightBlue)
-
+  
  elseif args[1] == "clear" then
   saveClear()
   flex.send("Save files cleared",
       colors.lightBlue)
-
+  
  elseif args[1] == "edit" then
   optionsEdit()
-
+  
  else -- not save/load/clear/edit
   flex.send("Invalid parameter: "..
       args[1],colors.red)
-
+  
  end --if/else save/load
  return
 end --function
 
 
 -----------------------------------------
--- ||   /¯\  /¯] /\ [¯¯][¯¯] /¯\ |\ || --
--- ||_ | O || [ |  | ||  ][ | O || \ | --
--- |__] \_/  \_]|||| || [__] \_/ || \| --
+-- ||   /¯\  /¯] /\ [¯¯][¯¯] /¯\ |\ || --
+-- ||_ | O || [ |  | ||  ][ | O || \ | --
+-- |__] \_/  \_]|||| || [__] \_/ || \| --
 -----------------------------------------
---||  || /\ |¯\[¯¯] /\ |¯\||  |¯¯]/¯¯\ --
--- \\// |  || / ][ |  || <||_ | ] \_¯\ --
---  \/  ||||| \[__]|||||_/|__]|__]\__/ --
+--||  || /\ |¯\[¯¯] /\ |¯\||  |¯¯]/¯¯\ --
+-- \\// |  || / ][ |  || <||_ | ] \_¯\ --
+--  \/  ||||| \[__]|||||_/|__]|__]\__/ --
 -----------------------------------------
 
 xdist = 0
@@ -379,7 +380,6 @@ rlast = -1
 lastmove = "r-"
 dugtotal = 0
 local blocks_processed_total = 0 -- New: Total blocks processed (dug or moved through)
-
 
 function getx() return xdist end
 function gety() return ydist end
@@ -432,9 +432,9 @@ end --function
 
 
 -------------------------------------------
---||   /¯\  /\ |¯\   ///¯¯\ /\ ||  |||¯¯]--
---||_ | O ||  ||  | // \_¯\|  | \\// | ] --
---|__] \_/ |||||_/ //  \__/||||  \/  |__]--
+--||   /¯\  /\ |¯\   ///¯¯\ /\ ||  |||¯¯]--
+--||_ | O ||  ||  | // \_¯\|  | \\// | ] --
+--|__] \_/ |||||_/ //  \__/||||  \/  |__]--
 -------------------------------------------
 
 function location()
@@ -442,7 +442,7 @@ function location()
   { xdist, ydist, zdist, rdist,
     xmin, xmax, ymin, ymax, zmin, zmax,
     xlast, ylast, zlast, rlast,
-    lastmove, dugtotal, blocks_processed_total } -- Added blocks_processed_total
+    lastmove, dugtotal }
 end
 
 
@@ -450,24 +450,25 @@ function saveCoords(loc,save)
  loc = loc or location()
  save = save or savefile
  local file,x
-
+ 
  --if fs.exists(save.."_old") then
  -- fs.delete(save.."_old")
  --end
  --if fs.exists(save) then
   --fs.move(save, save.."_old")
  --end
-
+ 
  while file == nil do
   file = fs.open(save,"w")
  end --while
-
+ 
  for x=1,#loc do
   file.writeLine(tostring(loc[x]))
-  -- Removed the flush at x==4 to ensure all data including blocks_processed_total is saved
-  -- if x == 4 then file.flush() end
+  -- Removed the explicit file.flush() here.
+  -- File buffering is usually handled by the system
+  -- and flushes on close or when the buffer is full.
  end --for
-
+ 
  file.close()
 end --function
 
@@ -496,20 +497,22 @@ function loadCoords(save)
   rlast = tonumber(file.readLine() or rlast)
   lastmove = file.readLine() or lastmove
   dugtotal = tonumber(file.readLine() or dugtotal)
-  blocks_processed_total = tonumber(file.readLine() or blocks_processed_total) -- New: Load blocks_processed_total
+  -- Ensure all lines are read if the file format changed
+  -- file.readLine() -- Read any potential extra lines from newer saves if format changed
   file.close()
   return true
-
+  
  else
   --if fs.exists(save.."_old") then
   -- loadCoords(save.."_old")
   -- return true
   --end
-
+  
   return false
  end --if/else
-
+ 
 end -- function
+
 
 
 function makeStartup(command, args)
@@ -519,7 +522,7 @@ function makeStartup(command, args)
  for x=1,#args do
   command = command.." "..args[x]
  end --for
-
+ 
  local file = fs.open(startfile,"w")
  file.writeLine("print(\"> "..command.."\")")
  file.writeLine("for x=5,1,-1 do")
@@ -535,73 +538,73 @@ end --function
 
 
 -------------------------------------
---[¯¯]|¯\ /\  /¯]||//[¯¯]|\ || /¯¯]--
--- || | /|  || [ | <  ][ | \ || [¯|--
--- || | \|||| \_]||\\[__]|| \| \__|--
+--[¯¯]|¯\ /\  /¯]||//[¯¯]|\ || /¯¯]--
+-- || | /|  || [ | <  ][ | \ || [¯|--
+-- || | \|||| \_]||\\[__]|| \| \__|--
 -------------------------------------
 
 function update(n)
-
+ 
  if n=="fwd" then
-
+  
   if rdist%360 == 0 then -- 12:00
    zdist = zdist + 1
    zlast = 1
    lastmove = "z+"
-
+   
   elseif rdist%360 == 90 then -- 3:00
    xdist = xdist + 1
    xlast = 1
    lastmove = "x+"
-
+   
   elseif rdist%360 == 180 then -- 6:00
    zdist = zdist - 1
    zlast = -1
    lastmove = "z-"
-
+   
   elseif rdist%360 == 270 then -- 9:00
    xdist = xdist - 1
    xlast = -1
    lastmove = "x-"
-
+   
   end --if/else
-
-
+  
+  
  elseif n=="back" then
-
+  
   if rdist%360 == 0 then -- 12:00
    zdist = zdist - 1
    zlast = -1
    lastmove = "z-"
-
+   
   elseif rdist%360 == 90 then -- 3:00
    xdist = xdist - 1
    xlast = -1
    lastmove = "x-"
-
+   
   elseif rdist%360 == 180 then -- 6:00
    zdist = zdist + 1
    zlast = 1
    lastmove = "z+"
-
+   
   elseif rdist%360 == 270 then -- 9:00
    xdist = xdist + 1
    xlast = 1
    lastmove = "x+"
-
+   
   end --if/else
-
-
+  
+  
  elseif n=="up" then
   ydist = ydist + 1
   ylast = 1
   lastmove = "y+"
-
+  
  elseif n=="down" then
   ydist = ydist - 1
   ylast = -1
   lastmove = "y-"
-
+  
  elseif n=="right" then
   rdist = rdist + 90
   rlast = 1
@@ -609,7 +612,7 @@ function update(n)
   while rdist > 999 do
    rdist = rdist - 360
   end --while
-
+  
  elseif n=="left" then
   rdist = rdist - 90
   rlast = -1
@@ -617,38 +620,41 @@ function update(n)
   while rdist < -999 do
    rdist = rdist + 360
   end --while
-
+  
  end --if/else
-
-
+ 
+ 
  if xdist < xmin then
   xmin = xdist
  elseif xdist > xmax then
   xmax = xdist
  end
-
+ 
  if ydist < ymin then
   ymin = ydist
  elseif ydist > ymax then
   ymax = ydist
  end
-
+ 
  if zdist < zmin then
   zmin = zdist
  elseif zdist > zmax then
   zmax = zdist
  end
-
- -- saveCoords() -- Save is now called by addBlocksProcessed or other state changes
-
+ 
+ saveCoords()
+ 
 end
 
 
+
+
 ------------------------------------------
--- |\/| /¯\ ||  |||¯¯]|\/||¯¯]|\ ||[¯¯] --
--- |  || O | \\// | ] |  || ] | \ | ||  --
--- |||| \_/   \/  |__]|||||__]|| \| ||  --
+-- |\/| /¯\ ||  |||¯¯]|\/||¯¯]|\ ||[¯¯] --
+-- |  || O | \\// | ] |  || ] | \ | ||  --
+-- |||| \_/   \/  |__]|||||__]|| \| ||  --
 ------------------------------------------
+
 
 stuck = false
 function isStuck()
@@ -669,8 +675,6 @@ function left(n)
  for x=1,n do
   turtle.turnLeft()
   update("left")
-  -- Rotations don't process a block space in the same way as linear moves
-  -- addBlocksProcessed(1) -- Don't count rotations as processed blocks for quarry volume
  end --if
  return true
 end --function
@@ -685,8 +689,6 @@ function right(n)
  for x=1,n do
   turtle.turnRight()
   update("right")
-  -- Rotations don't process a block space in the same way as linear moves
-  -- addBlocksProcessed(1) -- Don't count rotations as processed blocks for quarry volume
  end --if
  return true
 end --function
@@ -703,45 +705,45 @@ function up(n)
  if n < 0 then
   return down(-n)
  end --if
-
+ 
  local x,a,b,t
-
+ 
  for x=1, n do
   refuel()
-
+  
   if not turtle.up() then
-
+   
    if doblacklist then
     -- Blocks not to mine
     if flex.isBlockUp(options["blacklist"]) then
-     if not back() then return false end -- back calls addBlocksProcessed
-     if not up() then return false end -- up calls addBlocksProcessed
-     -- addBlocksProcessed(1) -- Count this move as processed (handled by recursive call)
+     if not back() then return false end
+     if not up() then return false end
      return true
     end --if
    end --if
-
+   
    t = os.time()
    stuck = false
+   -- Note: turtle.digUp() also attempts to pick up the item if inventory space is available.
    while not turtle.up() do
     a,b = turtle.digUp()
     while a do
-     dugtotal = dugtotal + 1
+     dugtotal = dugtotal + 1 
+     -- Item pickup is handled by turtle.digUp() if successful and space is available.
      a,b = turtle.digUp()
     end --while
-
+    
     if b == protect then
      if doblacklist then
       options["blacklist"][
          #options["blacklist"]+1]
          = flex.getBlockUp()
-      -- addBlocksProcessed(1) -- Count this attempt as processed (handled by recursive call)
       return up(n-x+1)
      else
       b = unbreak
      end --if
     end --if
-
+    
     if b == unbreak then
      flex.send("#1"..b.."#0: {#8"..
        tostring(getx()).."#0,#8"..
@@ -751,35 +753,29 @@ function up(n)
        getx(), gety()+1, getz() }
      stuck = true
      stuckDir = "up"
-     -- Count this unbreakable block attempt as processed
-     -- addBlocksProcessed(1) -- Handled by calling up
      return false
     end --if
     if a then
      dugtotal = dugtotal + 1
     end --if
     if attack then turtle.attackUp() end
-
+    
     if (os.time()-t)/24*20*60 > 20 then
      -- Stuck for at least 20 seconds
      -- Usually caused by height limits
      flex.send("Unable to move up",colors.orange)
      stuck = true
      stuckDir = "up"
-     -- Count this prolonged stuck state as processing the block space
-     -- addBlocksProcessed(1) -- Handled by calling up
      return false
     end --if
-
+    
    end --while
-
+   
   end --if can't move
-
+  
   update("up")
-  addBlocksProcessed(1) -- Count successful upward move as processing one block space
-  saveCoords() -- Save state after processing a block space
  end --for
-
+ 
  return true
 end --function
 
@@ -790,45 +786,45 @@ function down(n)
  if n < 0 then
   return up(-n)
  end --if
-
+ 
  local x,a,b,t
-
+ 
  for x=1, n do
   refuel()
-
+  
   if not turtle.down() then
-
+   
    if doblacklist then
     -- Blocks not to mine
     if flex.isBlockDown(options["blacklist"]) then
-     if not fwd() then return false end -- fwd calls addBlocksProcessed
-     if not down() then return false end -- down calls addBlocksProcessed
-     -- addBlocksProcessed(1) -- Count this move as processed (handled by recursive call)
+     if not fwd() then return false end
+     if not down() then return false end
      return true
     end --if
    end --if
-
+   
    t = os.time()
    stuck = false
+   -- Note: turtle.digDown() also attempts to pick up the item if inventory space is available.
    while not turtle.down() do
     a,b = turtle.digDown()
     while a do
      dugtotal = dugtotal + 1
+     -- Item pickup is handled by turtle.digDown() if successful and space is available.
      a,b = turtle.digDown()
     end --while
-
+    
     if b == protect then
      if doblacklist then
       options["blacklist"][
         #options["blacklist"]+1 ]
         = flex.getBlockDown()
-      -- addBlocksProcessed(1) -- Count this attempt as processed (handled by recursive call)
       return down(n-x+1)
      else
       b = unbreak
      end --if
     end --if
-
+    
     if b == unbreak then
      flex.send("#1"..b.."#0: {#8"..
        tostring(getx()).."#0,#8"..
@@ -838,35 +834,29 @@ function down(n)
        getx(), gety()-1, getz() }
      stuck = true
      stuckDir = "down"
-     -- Count this unbreakable block attempt as processed
-     -- addBlocksProcessed(1) -- Handled by calling down
      return false
     end --if
     if a then
      dugtotal = dugtotal + 1
     end --if
     if attack then turtle.attackDown() end
-
+    
     if (os.time()-t)/24*20*60 > 20 then
      -- Stuck for at least 20 seconds
      -- Usually caused by height limits
      flex.send("Unable to move down",colors.orange)
      stuck = true
      stuckDir = "down"
-     -- Count this prolonged stuck state as processing the block space
-     -- addBlocksProcessed(1) -- Handled by calling down
      return false
     end --if
-
+    
    end --while
-
+   
   end --if can't move
-
+  
   update("down")
-  addBlocksProcessed(1) -- Count successful downward move as processing one block space
-  saveCoords() -- Save state after processing a block space
  end --for
-
+ 
  return true
 end --function
 
@@ -877,76 +867,74 @@ function fwd(n)
  if n < 0 then
   return back(-n)
  end --if
-
+ 
  local x,z,a,b,t
  for x=1, n do
   refuel()
-
+  
   if not turtle.forward() then
-
+   
    if doblacklist then
     -- Blocks not to mine
     if flex.isBlock(options["blacklist"]) then
      if flex.isBlockUp(options["blacklist"]) then
       if flex.isBlockDown(options["blacklist"]) then
-
+       
        -- Blocks above, below and in front
-       if not back() then return false end -- back calls addBlocksProcessed
-       if not up(2) then return false end -- up calls addBlocksProcessed
-       if not fwd(2) then return false end -- fwd calls addBlocksProcessed
-       if not down(2) then return false end -- down calls addBlocksProcessed
-       -- addBlocksProcessed(4) -- Count these recovery moves (Handled by calls)
+       if not back() then return false end
+       if not up(2) then return false end
+       if not fwd(2) then return false end
+       if not down(2) then return false end
        return true
-
+       
       else -- Blocks in front and above
-       if not down() then return false end -- down calls addBlocksProcessed
+       if not down() then return false end
        x = 0
        while flex.isBlock(options["blacklist"]) do
         x = x + 1
-        if not down() then return false end -- down calls addBlocksProcessed
+        if not down() then return false end
        end --while
-       if not fwd(2) then return false end -- fwd calls addBlocksProcessed
-       if not up(x) then return false end -- up calls addBlocksProcessed
-       -- addBlocksProcessed(3 + x) -- Count these recovery moves (Handled by calls)
+       if not fwd(2) then return false end
+       if not up(x) then return false end
        return
       end --if/else
-
+      
      else
       -- Block in front
-      if not up() then return false end -- up calls addBlocksProcessed
-      if not fwd(2) then return false end -- fwd calls addBlocksProcessed
-      if not down() then return false end -- down calls addBlocksProcessed
-      -- addBlocksProcessed(3) -- Count these recovery moves (Handled by calls)
+      if not up() then return false end
+      if not fwd(2) then return false end
+      if not down() then return false end
       return true
      end --if/else
     end --if
    end --if doblacklist
-
+   
    t = os.time()
    stuck = false
+   -- Note: turtle.dig() also attempts to pick up the item if inventory space is available.
    while not turtle.forward() do
     a,b = turtle.dig()
     while a do
      dugtotal = dugtotal + 1
+     -- Item pickup is handled by turtle.dig() if successful and space is available.
      a,b = turtle.dig()
     end --while
-
+    
     if b == protect then
      if doblacklist then
       options["blacklist"][
           #options["blacklist"]+1]
           = flex.getBlock()
-      -- addBlocksProcessed(1) -- Count this attempt as processed (Handled by recursive call)
       return fwd(n-x+1)
      else
       b = unbreak
      end --if
     end --if
-
+    
     if b == unbreak then
      z = { getx(), gety(),
            getz(), getr()%360 }
-
+     
      if z[4] == 0 then
       z[3] = z[3] + 1
      elseif z[4] == 90 then
@@ -956,7 +944,7 @@ function fwd(n)
      elseif z[4] == 270 then
       z[1] = z[1] - 1
      end --if/else
-
+     
      flex.send("#1"..b.."#0: {#8"..
        tostring(z[1]).."#0,#8"..
        tostring(z[2]).."#0,#8"..
@@ -965,16 +953,14 @@ function fwd(n)
        { z[1], z[2], z[3] }
      stuck = true
      stuckDir = "fwd"
-     -- Count this unbreakable block attempt as processed
-     -- addBlocksProcessed(1) -- Handled by calling fwd
      return false
     end --if
-
+    
     if a then
      dugtotal = dugtotal + 1
     end --if
     if attack then turtle.attack() end
-
+    
     --if (os.time()-t)/24*20*60 > 120 then
      -- Stuck for at least 20 seconds
      --flex.send("Unable to move forward",colors.orange)
@@ -983,16 +969,14 @@ function fwd(n)
      --return false
      --t = os.time()
     --end --if
-
+    
    end --while not turtle.forward()
-
+   
   end --if can't move
-
+  
   update("fwd")
-  addBlocksProcessed(1) -- Count successful forward move as processing one block space
-  saveCoords() -- Save state after processing a block space
  end --if
-
+ 
  return true
 end --function
 
@@ -1001,28 +985,24 @@ end --function
 function back(n)
  n = n or 1
  if n < 0 then
-  return fwd(-n) -- fwd calls addBlocksProcessed
+  return fwd(-n)
  end --if
-
+ 
  local x,turn
  turn = false
  for x=1,n do
   if turn then
-   if not fwd() then return false end -- fwd calls addBlocksProcessed
-   -- addBlocksProcessed(1) -- Count this forward move (Handled by fwd)
+   if not fwd() then return false end
   elseif turtle.back() then
    update("back")
-   addBlocksProcessed(1) -- Count successful backward move as processing one block space
-   saveCoords() -- Save state
   else
    turn = true
-   gotor(rdist+180) -- gotor calls update for rotations
-   if not fwd() then return false end -- fwd calls addBlocksProcessed
-   -- addBlocksProcessed(1) -- Count the fwd move after turn (Handled by fwd)
+   gotor(rdist+180)
+   if not fwd() then return false end
   end --if/else
  end --for
-
- if turn then gotor(rdist-180) end -- gotor calls update for rotations
+ 
+ if turn then gotor(rdist-180) end
  return true
 end --function
 
@@ -1031,24 +1011,26 @@ end --function
 function dig(x)
  local a,b
  x = x or "fwd"
-
+ 
  if x=="fwd" then
   while turtle.dig() and not stuck do
    dugtotal = dugtotal + 1
+   -- Item pickup is handled by turtle.dig() if successful and space is available.
   end --while
-
+  
  elseif x=="up" then
   while turtle.digUp() and not stuck do
    dugtotal = dugtotal + 1
+   -- Item pickup is handled by turtle.digUp() if successful and space is available.
   end --while
-
+  
  elseif x=="down" then
   while turtle.digDown() and not stuck do
    dugtotal = dugtotal + 1
+   -- Item pickup is handled by turtle.digDown() if successful and space is available.
   end --while
-
+  
  end --if/else
- -- addBlocksProcessed is handled by the movement functions (fwd, up, down) that attempt to dig
 end --function
 
 function digUp() dig("up") end
@@ -1068,7 +1050,7 @@ function place()
    turtle.attack()
    turtle.attackDown()
   end --if
-
+  
   if (os.time()-t)/24*20*60 > 20 then
    local z = { getx(), gety(),
          getz(), getr()%360 }
@@ -1081,21 +1063,19 @@ function place()
    elseif z[4] == 270 then
     z[1] = z[1] - 1
    end --if/else
-
+   
    flex.send("#1End of world detected#0: {#8"..
      tostring(z[1]).."#0,#8"..
      tostring(z[2]).."#0,#8"..
      tostring(z[3]).."#0}")
    knownBedrock[#knownBedrock+1] =
      { z[1], z[2], z[3] }
-
+   
    stuck = true
    stuckDir = "fwd"
-   -- Placing doesn't process a block in the same way as moving/digging for quarry volume
-   -- addBlocksProcessed(1) -- Don't count placement as processed block for ETA volume
    return false
   end --if
-
+  
   sleep(0.1)
   x = flex.getBlock()
  end --while
@@ -1115,7 +1095,7 @@ function placeUp()
    turtle.attack()
    turtle.attackUp()
   end --if
-
+  
   if (os.time()-t)/24*20*60 > 20 then
    flex.send("#1Edge of world detected#0: {#8"..
      tostring(getx()).."#0,#8"..
@@ -1123,14 +1103,12 @@ function placeUp()
      tostring(getz()).."#0}")
    knownBedrock[#knownBedrock+1] = {
      getx(), gety()+1, getz() }
-
+   
    stuck = true
    stuckDir = "up"
-   -- Placing doesn't process a block in the same way as moving/digging for quarry volume
-   -- addBlocksProcessed(1) -- Don't count placement as processed block for ETA volume
    return false
   end --if
-
+  
   sleep(0.1)
   x = flex.getBlockUp()
  end --while
@@ -1150,7 +1128,7 @@ function placeDown()
    turtle.attack()
    turtle.attackDown()
   end --if
-
+  
   if (os.time()-t)/24*20*60 > 20 then
    flex.send("#1Edge of world detected#0: {#8"..
      tostring(getx()).."#0,#8"..
@@ -1158,17 +1136,15 @@ function placeDown()
      tostring(getz()).."#0}")
    knownBedrock[#knownBedrock+1] = {
      getx(), gety()-1, getz() }
-   up() -- up call will addBlocksProcessed
+   up()
    placeDown()
    ymin = gety()
-
+   
    stuck = true
    stuckDir = "down"
-   -- Placing doesn't process a block in the same way as moving/digging for quarry volume
-   -- addBlocksProcessed(1) -- Don't count placement as processed block for ETA volume
    return false
   end --if
-
+  
   sleep(0.1)
   x = flex.getBlockDown()
  end --while
@@ -1182,9 +1158,9 @@ end --function
 
 
 ----------------------------
---  /¯¯]  /¯\  [¯¯]  /¯\  --
--- | [¯| | O |  ||  | O | --
---  \__|  \_/   ||   \_/  --
+--  /¯¯]  /¯\  [¯¯]  /¯\  --
+-- | [¯| | O |  ||  | O | --
+--  \__|  \_/   ||   \_/  --
 ----------------------------
 
 
@@ -1195,22 +1171,22 @@ function gotor(r)
  end --if
  local x = (r-rdist)%360
  -- X is the target direction relative to current rotation
-
+ 
  if x == 90 then
-  right() -- right calls update
+  right()
  elseif x == 180 then
-  -- Calculate if turning left twice or right twice is faster
-  -- Let's simplify this and just use left(2) as it's consistent
-  left(2) -- left calls update
+  left(rlast*2)
+  -- Rotate opposite to last rotation
  elseif x == 270 then
-  left() -- left calls update
+  left()
  elseif x ~= 0 then
   error("Invalid rotation parameter", 2)
   return false
  end --if/else
-
+ 
  return true
 end --function
+
 
 
 function gotoy(y)
@@ -1218,14 +1194,13 @@ function gotoy(y)
   error("Number expected, got nil", 2)
   return
  end --if
-
+ 
  while ydist < y do
-  if not up() then return false end -- up calls update and addBlocksProcessed
+  if not up() then return false end
  end
  while ydist > y do
-  if not down() then return false end -- down calls update and addBlocksProcessed
+  if not down() then return false end
  end
- -- saveCoords() -- Save is called by up/down after each processed block
  return true
 end
 
@@ -1235,23 +1210,27 @@ function gotox(x)
   error("Number expected, got nil", 2)
   return
  end --if
-
+ 
  if xdist < x then
-  if rdist%360 == 270 then -- Facing -X
-   if not back(x-xdist) then return false end -- back calls update and addBlocksProcessed
-  else -- Not facing -X
-   gotor(90) -- gotor calls update
-   if not fwd(x-xdist) then return false end -- fwd calls update and addBlocksProcessed
-  end
- elseif xdist > x then
-  if rdist%360 == 90 then -- Facing +X
-   if not back(xdist-x) then return false end -- back calls update and addBlocksProcessed
-  else -- Not facing +X
-   gotor(270) -- gotor calls update
-   if not fwd(xdist-x) then return false end -- fwd calls update and addBlocksProcessed
+  if rdist == 270 then
+   return back(x-xdist)
+   
+  else
+   gotor(90)
+   return fwd(x-xdist)
   end
  end
- -- saveCoords() -- Save is called by fwd/back after each processed block
+ 
+ if xdist > x then
+  if rdist == 90 then
+   return back(xdist-x)
+   
+  else
+   gotor(270)
+   return fwd(xdist-x)
+  end
+ end
+ 
  return true
 end
 
@@ -1261,82 +1240,60 @@ function gotoz(z)
   error("Number expected, got nil", 2)
   return
  end --if
-
+ 
  if zdist < z then
-  if rdist%360 == 180 then -- Facing -Z
-   if not back(z-zdist) then return false end -- back calls update and addBlocksProcessed
-  else -- Not facing -Z
-   gotor(0) -- gotor calls update
-   if not fwd(z-zdist) then return false end -- fwd calls update and addBlocksProcessed
-  end
- elseif zdist > z then
-  if rdist%360 == 0 then -- Facing +Z
-   if not back(zdist-z) then return false end -- back calls update and addBlocksProcessed
-  else -- Not facing +Z
-   gotor(180) -- gotor calls update
-   if not fwd(zdist-z) then return false end -- fwd calls update and addBlocksProcessed
+  if rdist == 180 then
+   return back(z-zdist)
+   
+  else
+   gotor(0)
+   return fwd(z-zdist)
   end
  end
- -- saveCoords() -- Save is called by fwd/back after each processed block
+ 
+ if zdist > z then
+  if rdist == 0 then
+   return back(zdist-z)
+   
+  else
+   gotor(180)
+   return fwd(zdist-z)
+  end
+ end
+ 
  return true
 end
 
 
-function goto(x_target,y_target,z_target,r_target,lm)
- if type(x_target) == "table" then
-  if #x_target < 17 then -- Adjusted minimum size to include blocks_processed_total
-   error("Invalid Goto Table size",2)
+function goto(x,y,z,r,lm)
+ if type(x) == "table" then
+  if #x < 4 then
+   error("Invalid Goto Table",2)
   end
-  xdist = tonumber(x_target[1] or xdist) -- Load directly into globals
-  ydist = tonumber(x_target[2] or ydist)
-  zdist = tonumber(x_target[3] or zdist)
-  rdist = tonumber(x_target[4] or rdist)
-  xmin = tonumber(x_target[5] or xmin)
-  xmax = tonumber(x_target[6] or xmax)
-  ymin = tonumber(x_target[7] or ymin)
-  ymax = tonumber(x_target[8] or ymax)
-  zmin = tonumber(x_target[9] or zmin)
-  zmax = tonumber(x_target[10] or zmax)
-  xlast = tonumber(x_target[11] or xlast)
-  ylast = tonumber(x_target[12] or ylast)
-  zlast = tonumber(x_target[13] or zlast)
-  rlast = tonumber(x_target[14] or rlast)
-  lastmove = x_target[15] or lastmove
-  dugtotal = tonumber(x_target[16] or dugtotal)
-  blocks_processed_total = tonumber(x_target[17] or blocks_processed_total) -- Load blocks_processed_total
-
-  -- Now perform the actual moves to the target location
-  local current_x, current_y, current_z, current_r = getx(), gety(), getz(), getr()
-
-  -- Go to target X and Z first, then Y
-  if current_x ~= x_target[1] then gotox(x_target[1]) end
-  if current_z ~= z_target[3] then gotoz(z_target[3]) end
-  if current_y ~= y_target[2] then gotoy(y_target[2]) end
-  if current_r % 360 ~= r_target[4] % 360 then gotor(r_target[4]) end
-
-
-  if lm~=nil then setlast(lm) end
-  -- saveCoords() is called by the movement functions if they succeed
- else
-  -- If not loading from a table, perform moves to the target coordinates
-  gotox(x_target or 0)
-  gotoz(z_target or 0)
-  gotor(r_target or 0)
-  gotoy(y_target or 0)
-  if lm~=nil then setlast(lm) end
-  -- saveCoords() is called by the movement functions if they succeed
- end --if/else
+  y = x[2]
+  z = x[3]
+  r = x[4]
+  lm = x[15]
+  x = x[1]
+ end
+ gotox(x or 0)
+ gotoz(z or 0)
+ gotor(r or 0)
+ gotoy(y or 0)
+ if lm~=nil then setlast(lm) end
 end
 
 
+
+
 ---------------------------------------
--- |¯¯]|| |||¯¯]||    |¯\|¯\ /¯\     --
--- | ] ||_||| ] ||_   | /| /| O | == --
--- ||   \__||__]|__]  || | \ \_/     --
+-- |¯¯]|| |||¯¯]||    |¯\|¯\ /¯\     --
+-- | ] ||_||| ] ||_   | /| /| O | == --
+-- ||   \__||__]|__]  || | \ \_/     --
 ---------------------------------------
---   /¯]|¯¯]/¯¯\/¯¯\[¯¯]|\ || /¯¯]   --
---  | [ | ] \_¯\\_¯\ ][ | \ || [¯|   --
---   \_]|__]\__/\__/[__]|| \| \__|   --
+--   /¯]|¯¯]/¯¯\/¯¯\[¯¯]|\ || /¯¯]   --
+--  | [ | ] \_¯\\_¯\ ][ | \ || [¯|   --
+--   \_]|__]\__/\__/[__]|| \| \__|   --
 ---------------------------------------
 
 fuelSlot = {1,16}
@@ -1359,13 +1316,14 @@ function setFuelSlot(a,b)
 end --function
 
 
+
 function refuel(b)
  b = b or 1
  b = math.min(b, turtle.getFuelLimit())
  local a,x,z,slot
  slot = turtle.getSelectedSlot()
  a = true
-
+ 
  while turtle.getFuelLevel() < b do
   for x=fuelSlot[1],fuelSlot[2] do
    turtle.select(x)
@@ -1385,12 +1343,12 @@ function refuel(b)
    end --if
   end --for
  end --while
-
+ 
  if not a then
   flex.send("Thanks!",colors.lime)
  end --if
  turtle.select(slot)
-
+ 
 end --function
 
 
@@ -1420,32 +1378,33 @@ function checkFuelValue(x)
  if turtle.getItemCount(x) == 0 then
   return 0
  end --if
-
+ 
  local a,b,c,d
  a = turtle.getItemDetail(x)["name"]
  b = fuelvalue[a]
-
+ 
  if b == nil then
   c = turtle.getFuelLevel()
   turtle.select(x)
   turtle.refuel(1)
   d = turtle.getFuelLevel() - c
   fuelvalue[a] = d
-
+  
   file = fs.open(fuelfile, "a")
   file.writeLine(a)
   file.writeLine(tostring(d))
   file.close()
-
+  
   if turtle.getItemCount(x) == 0 then
    return 0
   else
    return d
   end --if
  end --if
-
+ 
  return b
 end --function
+
 
 
 
@@ -1460,7 +1419,7 @@ function setBlockStacks(n) blockStacks = n end
 function checkBlocks()
  if blockSlot == 0 then return end
  local x,docondense
-
+ 
  if not flex.isItem(options["buildingblocks"],blockSlot) then
   if turtle.getItemCount(blockSlot) > 0 then
    for x=blockSlot+1,16 do
@@ -1472,7 +1431,7 @@ function checkBlocks()
    end --for
   end --if
  end --if
-
+ 
  if turtle.getItemCount(blockSlot) == 0 then
   for x=1,16 do
    if flex.isItem(options["buildingblocks"],x) then
@@ -1484,9 +1443,10 @@ function checkBlocks()
   end --for
  flex.condense(blockSlot)
  end --if
-
+ 
  turtle.select(blockSlot)
 end --function
+
 
 
 function blockLava(dir)
@@ -1519,7 +1479,7 @@ function blockLavaDown() blockLava("down") end
 -- (Chest/Turtle/Quarry)
 
 function dropNotFuel()
-
+ 
  local slot = turtle.getSelectedSlot()
  local a,b,c,f,x,y,z
  local crafty,usedbucketalready,blocksPresent
@@ -1527,7 +1487,7 @@ function dropNotFuel()
  if turtle.getItemCount(1) > 1 then
   flex.condense()
  end --if
-
+ 
  -- Check there's inventory to place loot
  a = true
  while true do
@@ -1544,8 +1504,8 @@ function dropNotFuel()
  if not a then
   flex.send("Thanks!",colors.lightBlue)
  end --if
-
-
+ 
+ 
  -- Drop off what's not fuel
  blocksPresent = blockStacks
  for x=1,16 do
@@ -1569,11 +1529,11 @@ function dropNotFuel()
  if turtle.getItemCount(fuelSlot[1]) > 0 then
   flex.condense()
  end --if
-
-
+ 
+ 
  -- Craft coal into blocks
  if peripheral.find("workbench") and isChestUp() then
-
+  
   z = 0
   for x=1,16 do
    if turtle.getItemCount(x) > 0 and
@@ -1584,9 +1544,9 @@ function dropNotFuel()
    end --if
    z = z + turtle.getItemCount(x)
   end --for
-
+  
   if z >= 9 then
-
+   
    y = 13
    for x=1,12 do
     turtle.select(x)
@@ -1602,7 +1562,7 @@ function dropNotFuel()
      end --if
     end --while
    end --for
-
+   
    y = math.floor(z/9)
    turtle.select(13)
    turtle.dropUp(z%9)
@@ -1620,7 +1580,7 @@ function dropNotFuel()
      a = a + 1
     end --if
    end --for
-
+   
    if peripheral.getType("left") == "workbench" then
     crafty = peripheral.wrap("left")
    else
@@ -1628,25 +1588,25 @@ function dropNotFuel()
    end --if/else
    turtle.select(1)
    crafty.craft()
-
+   
   end --if
   while turtle.suckUp() do sleep(0) end
   checkBlocks()
-
+  
  end --if
-
-
+ 
+ 
  --Tally up fuel sources
  z = {} -- slot #
  f = {} -- amount of fuel
  usedbucketalready = false
-
+ 
  for x=1,16 do
   turtle.select(x)
-
+  
   if turtle.refuel(0) then
    y = turtle.getItemCount()
-
+   
    if flex.isItem("bucket") and y==1 then
     if not usedbucketalready then
      -- Only use buckets one at a time
@@ -1654,20 +1614,20 @@ function dropNotFuel()
      usedbucketalready = true
      turtle.drop()
     end
-
+    
    else -- Not a bucket
     a = checkFuelValue(x)
     if a > 0 then
      z[#z+1] = x
      f[#z] = a*turtle.getItemCount(x)
     end --if
-
+    
    end --if/else (is bucket)
-
+   
   end --if (is fuel)
  end --for (slots)
-
-
+ 
+ 
  -- Choose best fuel available
  a = 0
  for x=1, #f do
@@ -1689,12 +1649,12 @@ function dropNotFuel()
    break
   end --if
  end --for
-
-
+ 
+ 
  -- Deposit surplus fuel
  for x=fuelSlot[1]+1,16 do
   if turtle.getItemCount(x) > 0 then
-
+   
    turtle.select(x)
    if turtle.refuel(0) then
     if isChestUp() then
@@ -1706,10 +1666,10 @@ function dropNotFuel()
      turtle.drop()
     end --if
    end --if
-
+   
   end --if (more than zero items)
  end --for (all slots after fuel slot)
-
+ 
  turtle.select(fuelSlot[1])
  if not turtle.refuel(0) then
   for x=fuelSlot[1]+1,16 do
@@ -1719,9 +1679,9 @@ function dropNotFuel()
    end --if
   end --for
  end --if
-
+ 
  flex.condense(fuelSlot[1]+1)
-
+ 
  if turtle.getItemCount(16) > 0 then
   flex.send("Inventory full!",colors.red)
   turtle.select(16)
@@ -1730,7 +1690,7 @@ function dropNotFuel()
   turtle.select(slot)
   return dropNotFuel()
  end --if
-
+ 
  turtle.select(slot)
-
+ 
 end --function dropNotFuel()

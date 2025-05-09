@@ -55,7 +55,7 @@ local function displayStatus()
 
         term.setTextColor(colors.white)
         print("Turtle ID: " .. tostring(last_status.id))
-        if last_status.label and last_status.label !== "" then
+        if last_status.label and last_status.label ~= "" then
             term.setTextColor(colors.white)
             print("Turtle Label: " .. tostring(last_status.label))
         end
@@ -74,7 +74,7 @@ local function displayStatus()
         print("ETA: " .. tostring(last_status.estimated_completion_time or "Calculating..."))
 
         -- Display processed vs total blocks for context
-        if last_status.total_quarry_blocks !== nil and last_status.processed_blocks !== nil then
+        if last_status.total_quarry_blocks ~= nil and last_status.processed_blocks ~= nil then
              term.setTextColor(colors.lightBlue) -- Color for blocks
              print("Processed: "..tostring(last_status.processed_blocks).." / "..tostring(last_status.total_quarry_blocks).." blocks")
         end
@@ -86,7 +86,7 @@ local function displayStatus()
         term.setTextColor(colors.green) -- Depth color (Matches turtle UI)
         -- Construct the depth display using the sent ymin and current y
         local depth_display = tostring(-last_status.position.y) .. "m"
-        if last_status.ymin !== nil then -- Check if ymin was included in the status table
+        if last_status.ymin ~= nil then -- Check if ymin was included in the status table
             depth_display = depth_display .. " / " .. tostring(-last_status.ymin) .. "m"
         end
         print("Depth: " .. depth_display)
