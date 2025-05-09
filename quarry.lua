@@ -3,15 +3,6 @@
 -- cover from a reboot/unload event.
 -- Also avoids destroying spawners!
 
------------------------------------
--- [¯¯] || || |¯\\ [¯¯] ||   |¯¯] --
---  ||  ||_|| | /  ||  ||_  | ]  --
---  ||   \\__| | \\  ||  |__] |__] --
------------------------------------
---  /¯\\  || ||  /\\  |¯\\ |¯\\ \\\\// --
--- | O | ||_|| |  | | / | /  \\/  --
---  \\_\\\\  \\__| |||| | \\ | \\  ||  --
------------------------------------
 local log_file = "log.txt"
 local options_file = "flex_options.cfg"
 os.loadAPI("flex.lua")
@@ -353,16 +344,15 @@ local function sendStatus()
         -- print("DEBUG: sendStatus called but modem is nil. Cannot transmit.") -- NEW DEBUG PRINT if modem is nil
     end
 end
-
 -- checkProgress function (MODIFIED to call sendStatus and implement speed learning)
 local function checkProgress()
     -- Print detailed progress information (keep this for console)
     term.setCursorPos(1,1)
     term.clearLine()
     flex.printColors("Pos: X="..tostring(dig.getx())..
-                       ", Y="..tostring(dig.gety())..
-                       ", Z="..tostring(dig.getz())..
-                       ", Rot="..tostring(dig.getr()%360), colors.white)
+                     ", Y="..tostring(dig.gety())..
+                     ", Z="..tostring(dig.getz())..
+                     ", Rot="..tostring(dig.getr()%360), colors.white)
 
     term.setCursorPos(1,2)
     term.clearLine()
@@ -390,17 +380,30 @@ local function checkProgress()
             local time_elapsed_ms = current_epoch_time_ms - time_of_last_speed_check
 
             -- Avoid division by zero or very small times
-            if type(time_elapsed_ms) == 'number' and time_elapsed_ms > 50 then -- Require at least 50ms to avoid noisy data
-                local current_period_bps = blocks_since_last_speed_check / (time_elapsed_ms / 1000) or 1 -- Calculate speed for this period in blocks per second
-                 if type(current_period_bps) == 'number' and not math.huge(current_period_bps) and not math.nan(current_period_bps) then -- Check for valid number
-                    -- Simple averaging: average the new rate with the existing average
-                    avg_blocks_per_second = (avg_blocks_per_second + current_period_bps) / 2
+            if type(time_elapsed_ms) == 'number' and time_elapsed_ms > 0 then -- **CORRECTED: Check if time_elapsed_ms is greater than 0**
+                local current_period_bps = blocks_since_last_speed_check / (time_elapsed_ms / 1000) -- Calculate speed for this period in blocks per second
+                -- Check against math.huge and -math.huge as values, not call them as functions
+                 if type(current_period_bps) == 'number' and current_period_bps ~= math.huge and current_period_bps ~= -math.huge and not math.nan(current_period_bps) then -- Check for valid number
+                     -- Simple averaging: average the new rate with the existing average
+                     avg_blocks_per_second = (avg_blocks_per_second + current_period_bps) / 2
                  end
+            else
+                -- If no time has elapsed or time is invalid, do not calculate or update speed for this period.
+                -- Optionally, you could reset blocks_since_last_speed_check and time_of_last_speed_check here
+                -- to avoid accumulating blocks over zero time, but the current logic of only updating
+                -- if blocks were processed should handle this. Let's just skip speed update.
+                 print("DEBUG: Skipping speed calculation due to zero or invalid time_elapsed_ms.") -- Added debug print
             end
 
-            -- Reset for the next speed check period
+
+            -- Reset for the next speed check period (This was inside the >0 check before, moving it outside)
+            -- Moved resetting blocks_since_last_speed_check and time_of_last_speed_check outside
+            -- the check for time_elapsed_ms > 0 to ensure they reset after meeting the threshold
+            -- regardless of the instantaneous speed calculation success in this tick.
+            -- The speed update itself is conditional on valid time and bps.
             blocks_since_last_speed_check = 0
             time_of_last_speed_check = current_epoch_time_ms -- Start next period timer from now
+
         end
     end
     -- Update processed_at_last_check for the next checkProgress call
@@ -449,8 +452,8 @@ local function checkProgress()
     end
 
     -- Update dug and ydeep for the next checkProgress call
-    dug = current_dug or 0
-    ydeep = dig.gety() or 0 -- Update ydeep
+    dug = dig.getdug() or 0 -- Corrected to get current dug value, handle nil
+    ydeep = dig.gety() or 0 -- Update ydeep, handle nil
 
     -- checkReceivedCommand() -- Remove this if not doing remote control
 end --function checkProgress()
