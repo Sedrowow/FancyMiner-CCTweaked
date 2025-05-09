@@ -4,19 +4,20 @@
 -- Also avoids destroying spawners!
 
 -----------------------------------
--- [¯¯] || || |¯\ [¯¯] ||   |¯¯] --
+-- [¯¯] || || |¯\\ [¯¯] ||   |¯¯] --
 --  ||  ||_|| | /  ||  ||_  | ]  --
---  ||   \__| | \  ||  |__] |__] --
+--  ||   \\__| | \\  ||  |__] |__] --
 -----------------------------------
---  /¯\  || ||  /\  |¯\ |¯\ \\// --
--- | O | ||_|| |  | | / | /  \/  --
---  \_\\  \__| |||| | \ | \  ||  --
+--  /¯\\  || ||  /\\  |¯\\ |¯\\ \\\\// --
+-- | O | ||_|| |  | | / | /  \\/  --
+--  \\_\\\\  \\__| |||| | \\ | \\  ||  --
 -----------------------------------
 local log_file = "log.txt"
 local options_file = "flex_options.cfg"
 os.loadAPI("flex.lua")
 os.loadAPI("dig.lua")
-
+local modem_channel = 6464
+-- local received_command = nil -- Remove if not needed for status only
 
 dig.doBlacklist() -- Avoid Protected Blocks
 dig.doAttack() -- Attack entities that block the way
@@ -131,9 +132,9 @@ end --if
 
 
 ----------------------------------------------
--- |¯¯]|| |||\ || /¯][¯¯][¯¯] /¯\ |\ ||/¯¯\ --
--- | ] ||_||| \ || [  ||  ][ | O || \ |\_¯\ --
--- ||   \__||| \| \_] || [__] \_/ || \|\__/ --
+-- |¯¯]|| |||\ || /¯][¯¯][¯¯] /¯\ |\ ||/¯¯\\ --
+-- | ] ||_||| \\ || [  ||  ][ | O || \\ |\_¯\\ --
+-- ||   \\__||| \\| \\_] || [__] \\_/ || \\|\\__/ --
 ----------------------------------------------
 
 local location
@@ -235,8 +236,7 @@ local function checkInv()
  end --if
 end --function
 
-local total_quarry_blocks = 0
-local current_processed_blocks = dig.getBlocksProcessed()
+local total_quarry_blocks = 0 -- Will be calculated after initial descent
 function checkFuel()
  local a = turtle.getFuelLevel()
  -- This fuel estimate is very basic, you might need to adjust it
@@ -244,7 +244,7 @@ function checkFuel()
  local c = true
 
  -- More detailed fuel estimate based on remaining blocks (using processed blocks)
- local current_processed_blocks = dig.getBlocksProcessed()
+ local current_processed_blocks = dig.getBlocksProcessed() or 0
  local estimated_remaining_blocks = total_quarry_blocks - current_processed_blocks
  -- Rough estimate of fuel needed per *processed* block (adjust based on your setup)
  -- This assumes fuel is consumed for movement and digging
@@ -274,9 +274,9 @@ end --function checkFuel()
 
 -- Variables for status sending interval (DEFINED OUTSIDE any function)
 -- Use os.epoch("utc") for a precise, real-world time-based timestamp in milliseconds for sending
-local last_status_sent_time = os.epoch("local") or 0 -- Initialize defensively with epoch time in milliseconds
--- Status send interval in milliseconds (4 seconds = 10000 milliseconds)
-local status_send_interval = 4 * 1000 -- Send status every 4 seconds (in milliseconds)
+local last_status_sent_time = os.epoch("utc") or 0 -- Initialize defensively with epoch time in milliseconds
+-- Status send interval in milliseconds (10 seconds = 10000 milliseconds)
+local status_send_interval = 10 * 1000 -- Send status every 10 seconds (in milliseconds)
 
 -- Variables for ETA calculation and speed learning
 -- total_quarry_blocks is calculated after initial descent
@@ -286,16 +286,16 @@ local time_of_last_speed_check = os.epoch("local") or 0 -- Use local time for sp
 local avg_blocks_per_second = 0.8 -- Initial estimate (blocks processed per second)
 local speed_check_threshold = 50 -- Recalculate speed after processing this many blocks
 
-local dug = dig.getdug() -- Track dug blocks from previous checkProgress call
-local processed_at_last_check = dig.getBlocksProcessed() -- Track processed blocks from previous checkProgress call
-local ydeep = dig.getymin() -- Track min Y from previous checkProgress call
+local dug = dig.getdug() or 0 -- Track dug blocks from previous checkProgress call, handle nil
+local processed_at_last_check = dig.getBlocksProcessed() or 0 -- Track processed blocks from previous checkProgress call, handle nil
+local ydeep = dig.getymin() or 0 -- Track min Y from previous checkProgress call, handle nil
 
 -- Add this function to gather and send status (DEFINED OUTSIDE any function)
 local function sendStatus()
     -- Gather status data
     -- total_quarry_blocks is calculated once after initial descent
 
-    local current_processed_blocks = dig.getBlocksProcessed()
+    local current_processed_blocks = dig.getBlocksProcessed() or 0
     local estimated_remaining_blocks = total_quarry_blocks - current_processed_blocks
 
     local estimated_completion_time_str = "Calculating..."
@@ -336,7 +336,7 @@ local function sendStatus()
         -- Estimated time remaining duration is replaced by completion time string
         estimated_completion_time = estimated_completion_time_str,
         total_quarry_blocks = total_quarry_blocks, -- Send total blocks for context
-        dug_blocks = dig.getdug(), -- Still send dug blocks
+        dug_blocks = dig.getdug() or 0, -- Still send dug blocks, handle nil
         processed_blocks = current_processed_blocks, -- Send processed blocks for context
         ymin = ymin, -- Add ymin (minimum Y planned) to the status message
         inventory_summary = inventory_summary -- Include basic inventory summary
@@ -370,18 +370,19 @@ local function checkProgress()
 
     term.setCursorPos(1,3)
     term.clearLine()
-    flex.printColors("Dug: "..tostring(dig.getdug()).." blocks", colors.lightBlue)
+    flex.printColors("Dug: "..tostring(dig.getdug() or 0).." blocks", colors.lightBlue) -- Handle nil
 
     term.setCursorPos(1,4)
     term.clearLine()
     flex.printColors("Depth: "..tostring(-dig.gety()).."m / "..tostring(-ymin).."m", colors.green)
 
     -- Speed Learning Logic
-    local current_dug = dig.getdug()
-    -- Only update if blocks were actually dug since the last check
-    if current_dug > dug then
-        local blocks_dug_this_check = current_dug - dug
-        blocks_since_last_speed_check = blocks_since_last_speed_check + blocks_dug_this_check
+    -- Use processed blocks for speed calculation base
+    local current_processed_blocks = dig.getBlocksProcessed() or 0
+    -- Only update if blocks were actually processed since the last check
+    if current_processed_blocks > processed_at_last_check then
+        local blocks_processed_this_check = current_processed_blocks - processed_at_last_check
+        blocks_since_last_speed_check = blocks_since_last_speed_check + blocks_processed_this_check
 
         -- Check if threshold is met for speed recalculation
         if blocks_since_last_speed_check >= speed_check_threshold then
@@ -389,11 +390,12 @@ local function checkProgress()
             local time_elapsed_ms = current_epoch_time_ms - time_of_last_speed_check
 
             -- Avoid division by zero or very small times
-            if time_elapsed_ms > 50 then -- Require at least 50ms to avoid noisy data
-                local current_period_bps = blocks_since_last_speed_check / (time_elapsed_ms / 1000) -- Calculate speed for this period in blocks per second
-                -- Simple averaging: average the new rate with the existing average
-                avg_blocks_per_second = (avg_blocks_per_second + current_period_bps) / 2
-                -- print("DEBUG: Speed updated. Blocks this period: "..tostring(blocks_since_last_speed_check)..", Time elapsed (ms): "..tostring(time_elapsed_ms)..", Current BPS: "..tostring(current_period_bps)..", New Avg BPS: "..tostring(avg_blocks_per_second)) -- Optional debug
+            if type(time_elapsed_ms) == 'number' and time_elapsed_ms > 50 then -- Require at least 50ms to avoid noisy data
+                local current_period_bps = blocks_since_last_speed_check / (time_elapsed_ms / 1000) or 1-- Calculate speed for this period in blocks per second
+                 if type(current_period_bps) == 'number' and not math.huge(current_period_bps) and not math.nan(current_period_bps) then -- Check for valid number
+                    -- Simple averaging: average the new rate with the existing average
+                    avg_blocks_per_second = (avg_blocks_per_second + current_period_bps) / 2
+                 end
             end
 
             -- Reset for the next speed check period
@@ -401,11 +403,14 @@ local function checkProgress()
             time_of_last_speed_check = current_epoch_time_ms -- Start next period timer from now
         end
     end
+    -- Update processed_at_last_check for the next checkProgress call
+    processed_at_last_check = current_processed_blocks
+
 
     -- Calculate Estimated Time Remaining in Seconds
     local estimated_time_remaining_seconds = -1 -- Default to -1 if cannot calculate
-    local current_processed_blocks = dig.getBlocksProcessed() or 0 -- Use 0 if nil
-    local remaining_blocks_for_eta = total_quarry_blocks - current_processed_blocks -- Use processed blocks for ETA base
+    -- Use processed blocks for ETA base
+    local remaining_blocks_for_eta = total_quarry_blocks - current_processed_blocks
 
     if type(remaining_blocks_for_eta) == 'number' and remaining_blocks_for_eta > 0 and type(avg_blocks_per_second) == 'number' and avg_blocks_per_second > 0 then
         estimated_time_remaining_seconds = remaining_blocks_for_eta / avg_blocks_per_second
@@ -413,7 +418,7 @@ local function checkProgress()
 
     -- Format Estimated Time Remaining as MM:SS for local display
     local eta_display_str = "Calculating..."
-    if estimated_time_remaining_seconds >= 0 then
+    if type(estimated_time_remaining_seconds) == 'number' and estimated_time_remaining_seconds >= 0 then
         local minutes = math.floor(estimated_time_remaining_seconds / 60)
         local seconds = math.floor(estimated_time_remaining_seconds % 60)
         eta_display_str = string.format("%02d:%02d", minutes, seconds)
@@ -444,8 +449,8 @@ local function checkProgress()
     end
 
     -- Update dug and ydeep for the next checkProgress call
-    dug = current_dug
-    ydeep = dig.gety() -- Update ydeep
+    dug = current_dug or 0
+    ydeep = dig.gety() or 0 -- Update ydeep
 
     -- checkReceivedCommand() -- Remove this if not doing remote control
 end --function checkProgress()
@@ -537,13 +542,13 @@ end --function
 
 
 ---------------------------------------
---      |\/|  /\  [¯¯] |\ ||         --
---      |  | |  |  ][  | \ |         --
---      |||| |||| [__] || \|         --
+--      |\/|  /\\  [¯¯] |\\ ||         --
+--      |  | |  |  ][  | \\ |         --
+--      |||| |||| [__] || \\|         --
 ---------------------------------------
--- |¯\ |¯\  /¯\   /¯¯] |¯\  /\  |\/| --
+-- |¯\\ |¯\\  /¯\\   /¯¯] |¯\\  /\\  |\/| --
 -- | / | / | O | | [¯| | / |  | |  | --
--- ||  | \  \_/   \__| | \ |||| |||| --
+-- ||  | \\  \\_/   \\__| | \\ |||| |||| --
 ---------------------------------------
 
 local a,b,c,x,y,z,r,loc
@@ -575,7 +580,7 @@ if reloaded then
   dig.gotor(0)
   checkFuel()
   -- skip is used here
-  dig.gotoy(math.min(dig.getymin(),-skip)) -- Corrected: go to min y or skip depth
+  dig.gotoy(math.min(dig.getymin() or 0,-skip)) -- Corrected: go to min y or skip depth, handle nil
  end --if
 
 else
@@ -614,32 +619,33 @@ while dig.gety() > -skip do
   --rs.delete("startup.lua")
   return
  end --if
+ -- checkReceivedCommand() -- Remove if not doing remote control
 end --while
 print("DEBUG: After descent loop.") -- Debug print kept
 
--- Now that the initial descent is done, set the starting Y for total block calculation
-local initial_ymax = dig.gety()
--- Calculate total blocks assuming depth_arg is the number of layers
-if depth_arg ~= nil then
- total_quarry_blocks = xmax * zmax * depth_arg
-else
- -- If depth arg was not provided, use the original calculation to bedrock
- total_quarry_blocks = xmax * zmax * (initial_ymax - ymin + 1)
+-- Now that the initial descent is done, calculate the total blocks to be mined
+local mining_start_y = dig.gety() -- This is the Y coordinate after skipping (or 0 if no skip)
+local mining_depth_layers = mining_start_y - ymin + 1 -- Number of layers to mine (inclusive)
+total_quarry_blocks = xmax * zmax * mining_depth_layers -- Corrected total blocks calculation
+
+-- Ensure total_quarry_blocks is not negative or zero if dimensions are invalid or mining depth is 0 or less
+if total_quarry_blocks <= 0 then
+    flex.send("Error: Calculated total quarry blocks is <= 0. Check dimensions and skip value.", colors.red)
+    shell.run("rm startup.lua")
+    return
 end
 
--- Ensure total_quarry_blocks is not negative in case of weird inputs
-if total_quarry_blocks < 0 then total_quarry_blocks = 0 end
-print("DEBUG: Total quarry blocks calculated: "..tostring(total_quarry_blocks))
+print("DEBUG: Total quarry blocks calculated (considering skip): "..tostring(total_quarry_blocks))
 
 
 --------------------------
--- |\/|  /\  [¯¯] |\ || --
--- |  | |  |  ][  | \ | --
--- |||| |||| [__] || \| --
+-- |\/|  /\\  [¯¯] |\\ || --
+-- |  | |  |  ][  | \\ | --
+-- |||| |||| [__] || \\| --
 --------------------------
--- ||    /¯\   /¯\  |¯\ --
+-- ||    /¯\\   /¯\\  |¯\\ --
 -- ||_  | O | | O | | / --
--- |__]  \_/   \_/  ||  --
+-- |__]  \\_/   \\_/  ||  --
 --------------------------
 
 local done = false -- 'done' is local to this main loop
@@ -648,11 +654,11 @@ blocks_since_last_speed_check = 0
 time_of_last_speed_check = os.epoch("local") or 0
 
 while not done and not dig.isStuck() do
-
-turtle.select(1)
+ -- checkReceivedCommand() -- Remove if not doing remote control
+ turtle.select(1)
 
  while not done do
-
+  -- checkReceivedCommand() -- Remove if not doing remote control
 
   checkAll(0) -- checkAll calls checkProgress, which calls status send and speed learning
 
@@ -715,15 +721,16 @@ end --while (cuboid dig loop)
 
 flex.send("Digging completed, returning to surface",
   colors.yellow)
+sendStatus() -- Send final status update
 gotoBase()
 
-flex.send("Descended "..tostring(-dig.getymin())..
+flex.send("Descended "..tostring(-(dig.getymin() or 0)).. -- Handle nil for dig.getymin
     "m total",colors.green)
-flex.send("Dug "..tostring(dig.getdug())..
+flex.send("Dug "..tostring(dig.getdug() or 0).. -- Handle nil for dig.getdug
     " blocks total",colors.lightBlue)
 
--- Final status send upon completion
-sendStatus()
+-- Final status send upon completion (redundant if called before gotoBase, but harmless)
+-- sendStatus()
 
 
 for x=1,16 do
