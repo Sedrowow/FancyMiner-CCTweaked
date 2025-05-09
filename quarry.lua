@@ -264,10 +264,10 @@ function checkFuel()
 end --function checkFuel()
 
 -- Variables for status sending interval (DEFINED OUTSIDE any function)
--- Use os.epoch("utc") for a precise, real-world time-based timestamp in milliseconds for sending
-local last_status_sent_time = os.epoch("utc") or 0 -- Initialize defensively with epoch time in milliseconds
--- Status send interval in milliseconds (10 seconds = 10000 milliseconds)
-local status_send_interval = 10 * 1000 -- Send status every 10 seconds (in milliseconds)
+-- Use os.epoch("local") for a precise, real-world time-based timestamp in milliseconds for sending
+local last_status_sent_time = os.epoch("local") or 0 -- Initialize defensively with epoch time in milliseconds
+-- Status send interval in milliseconds (4 seconds = 4000 milliseconds)
+local status_send_interval = 4 * 1000 -- Send status every 4 seconds (in milliseconds)
 
 -- Variables for ETA calculation and speed learning
 -- total_quarry_blocks is calculated after initial descent
@@ -301,7 +301,7 @@ local function sendStatus()
         -- os.date() with a format string and timestamp gives a formatted string
         estimated_completion_time_str = os.date("%Y-%m-%d %H:%M:%S", estimated_completion_time_sec)
     elseif total_quarry_blocks > 0 and estimated_remaining_blocks <= 0 then
-         estimated_completion_time_str = "Completed" -- Indicate if digging is theoretically done
+        estimated_completion_time_str = "Completed" -- Indicate if digging is theoretically done
     end
 
 
@@ -333,7 +333,7 @@ local function sendStatus()
         inventory_summary = inventory_summary -- Include basic inventory summary
     }
 
-    -- Send the status message on a specific channel (e.g., 6465)
+    -- Send the status message on a specific channel
     local status_channel = modem_channel -- Channel for status updates
     if modem then -- Check if modem peripheral is available
         -- print("DEBUG: Attempting to transmit status on channel " .. status_channel) -- NEW DEBUG PRINT before transmit
@@ -344,6 +344,8 @@ local function sendStatus()
         -- print("DEBUG: sendStatus called but modem is nil. Cannot transmit.") -- NEW DEBUG PRINT if modem is nil
     end
 end
+
+
 -- checkProgress function (MODIFIED to call sendStatus and implement speed learning)
 local function checkProgress()
     -- Print detailed progress information (keep this for console)
