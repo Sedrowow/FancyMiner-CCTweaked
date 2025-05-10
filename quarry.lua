@@ -1,3 +1,18 @@
+-- This is a replacement for the
+-- 'excavate' program, as it can re-
+-- cover from a reboot/unload event.
+-- Also avoids destroying spawners!
+
+-----------------------------------
+-- [¯¯] || || |¯\ [¯¯] ||   |¯¯] --
+--  ||  ||_|| | /  ||  ||_  | ]  --
+--  ||   \__| | \  ||  |__| |__] --
+-----------------------------------
+--  /¯\  || ||  /\  |¯\ |¯\ \\// --
+-- | O | ||_|| |  | | / | /  \/  --
+--  \_\\  \__| |||| | \ | \  ||  --
+-----------------------------------
+
 local log_file = "log.txt"
 local options_file = "flex_options.cfg"
 os.loadAPI("flex.lua")
@@ -166,7 +181,7 @@ local function checkHalt()
  -- Check redstone input specifically on the top side
  if peripheral.isPresent("top") then
     local top_peripheral = peripheral.wrap("top")
-    if top_peripheral.isBundled? then -- Check if it's a bundled cable
+    if top_peripheral.isBundled then -- Check if it's a bundled cable
         -- Assuming redstone input from the top peripheral acts as a halt signal
         local bundled_input = top_peripheral.getBundledInput("top")
         if bundled_input > 0 then -- Check if any bundled color is active
@@ -200,7 +215,7 @@ local function checkHalt()
              returnFromBase(loc) -- Return from base
              return true -- Indicate halt was handled
         end
-    elseif top_peripheral.getInput? then -- Check if it's a standard redstone port
+    elseif top_peripheral.getInput then -- Check if it's a standard redstone port
          if top_peripheral.getInput("top") then -- Check if standard redstone is active
              -- Redstone signal from above
              local loc,x

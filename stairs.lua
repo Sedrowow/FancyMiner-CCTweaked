@@ -65,22 +65,17 @@ local name_box = {
    "shulker_box", "travelersbackpack" }
 
 
--- Stair blocks crafting material
+-- Stair blocks
 local name_cobble = {
   "minecraft:cobblestone",
   "forge:cobblestone" }
+-- Added explicit name for stairs block
+local name_stairs = {"minecraft:cobblestone_stairs"}
 
--- Items needed for crafting torches at base
-local name_wood_log = {
-    "minecraft:oak_log", "minecraft:spruce_log", "minecraft:birch_log",
-    "minecraft:jungle_log", "minecraft:acacia_log", "minecraft:dark_oak_log",
-    "forge:logs" -- Include forge tag for logs
-}
-local name_planks = {
-    "minecraft:oak_planks", "minecraft:spruce_planks", "minecraft:birch_planks",
-    "minecraft:jungle_planks", "minecraft:acacia_planks", "minecraft:dark_oak_planks",
-    "forge:planks" -- Include forge tag for planks
-}
+
+-- Removed crafting materials as crafting is removed
+-- local name_wood_log = { ... }
+-- local name_planks = { ... }
 local name_coal = { "minecraft:coal", "forge:coal" }
 local name_stick = { "minecraft:stick", "forge:sticks" }
 
@@ -90,13 +85,132 @@ local tool_side = "none"
 -- Removed crafting bench peripheral logic: if not peripheral.find("workbench") then ... end
 
 
--- **MODIFIED: Home Base Location - Chest is behind at start**
--- Assuming the home chest is at the turtle's starting position (0,0,0)
--- and the turtle turns 180 degrees to face South to interact with it.
+-- **MODIFIED: Home Base Location and Navigation Logic**
 local home_base_coords = { x = 0, y = 0, z = 0, r = 180 } -- At origin, facing South
-local home_chest_side = "south" -- The side the chest is on when at home_base_coords (behind the turtle)
+local home_chest_side = "back" -- The side the chest is on relative to the turtle's position
+local saved_location -- Variable to store the location before going to base
 
-local saved_location -- Variable to store the location before going to home base
+-- **ADDED: Crafting helper functions**
+local function clearCraftingGrid()
+    -- Clear slots 1-9 (3x3 crafting grid)
+    for slot = 1, 9 do
+        if turtle.getItemCount(slot) > 0 then
+            -- Try to move items to inventory slots 10-16
+            local moved = false
+            for target = 10, 16 do
+                if turtle.getItemCount(target) == 0 then
+                    turtle.select(slot)
+                    moved = turtle.transferTo(target)
+                    if moved then break
+                    end
+                end
+            end
+            -- If couldn't move, try to merge with similar items
+            if not moved then
+                turtle.select(slot)
+                for target = 10, 16 do
+                    local details = turtle.getItemDetail(target)
+                    if details and turtle.getItemDetail(slot).name == details.name then
+                        turtle.transferTo(target)
+                        break
+                    end
+                end
+            end
+        end
+    end
+    turtle.select(1) -- Return to first slot
+end
+
+local function setupCraftingGrid(pattern, count)
+    clearCraftingGrid() -- Ensure crafting grid is clear
+    -- Pattern should be a table of 9 entries describing the 3x3 grid
+    -- Each entry should be an item name or nil
+    for i = 1, 9 do
+        if pattern[i] then
+            -- Find the item in inventory slots 10-16
+            for slot = 10, 16 do
+                local details = turtle.getItemDetail(slot)
+                if details and details.name == pattern[i] then
+                    local needed = count or 1
+                    turtle.select(slot)
+                    turtle.transferTo(i, needed)
+                    break
+                end
+            end
+        end
+    end
+    turtle.select(1) -- Return to first slot
+end
+
+local function craftStairs(count)
+    count = count or 1
+    -- Cobblestone stairs pattern (6 cobblestone in L shape)
+    local pattern = {
+        "minecraft:cobblestone", "nil",                "nil",
+        "minecraft:cobblestone", "minecraft:cobblestone", "nil",
+        "minecraft:cobblestone", "minecraft:cobblestone", "minecraft:cobblestone"
+    }
+    
+    setupCraftingGrid(pattern, 1)
+    if turtle.craft(count) then
+        send_log_message("Crafted "..tostring(count).." stairs", colors.lightBlue)
+        return true
+    else
+        send_log_message("Failed to craft stairs", colors.red)
+        return false
+    end
+end
+
+-- **MODIFIED: gotoBase with better coordinate handling**
+local function gotoBase()
+    -- Save current location before moving
+    saved_location = dig.location()
+    if not saved_location then
+        send_log_message("Failed to save current location", colors.red)
+        return nil
+    end
+    
+    send_log_message("Returning to home base...", colors.yellow)
+    
+    -- First try to get to the right Y level (surface)
+    if dig.gety() < home_base_coords.y then
+        while dig.gety() < home_base_coords.y and not dig.isStuck() do
+            if not dig.up() then break end
+        end
+    elseif dig.gety() > home_base_coords.y then
+        while dig.gety() > home_base_coords.y and not dig.isStuck() do
+            if not dig.down() then break end
+        end
+    end
+    
+    -- Then move to X,Z coordinates
+    if not dig.gotox(home_base_coords.x) then
+        send_log_message("Failed to reach home base X coordinate", colors.red)
+        return nil
+    end
+    if not dig.gotoz(home_base_coords.z) then
+        send_log_message("Failed to reach home base Z coordinate", colors.red)
+        return nil
+    end
+    
+    -- Finally, face the right direction
+    if not dig.gotor(home_base_coords.r) then
+        send_log_message("Failed to reach home base rotation", colors.red)
+        return nil
+    end
+
+    -- Verify position
+    if dig.getx() == home_base_coords.x and
+       dig.gety() == home_base_coords.y and
+       dig.getz() == home_base_coords.z and
+       dig.getr() % 360 == home_base_coords.r then
+        send_log_message("Successfully reached home base", colors.lightBlue)
+        return saved_location
+    else
+        send_log_message("Failed to reach exact home base coordinates", colors.red)
+        return nil
+    end
+end
 
 -- Variables for status sending interval
 local last_status_sent_time = os.epoch("local") or 0 -- Initialize defensively with epoch time in milliseconds
@@ -174,20 +288,56 @@ local function send_log_message(message, color)
     -- This ensures receive.lua gets the latest log quickly
     sendStatus()
 end
+-- Helper function to check and send status periodically
+local function checkAndSendStatus()
+     local current_epoch_time_ms = os.epoch("local") or 0
+     -- **FIXED: Ensure last_status_sent_time is a number before calculation**
+     local time_difference_ms = 0
+     if type(last_status_sent_time) == 'number' then
+         time_difference_ms = current_epoch_time_ms - last_status_sent_time
+     else
+         -- Initialize last_status_sent_time if it's not a number
+         last_status_sent_time = current_epoch_time_ms
+     end
 
 
--- **ADDED: Functions to go to and return from Home Base**
+     if type(current_epoch_time_ms) == 'number' and time_difference_ms >= status_send_interval then
+         sendStatus()
+         last_status_sent_time = current_epoch_time_ms -- Update last sent time
+     end
+end
+
+-- **MODIFIED: Functions to go to and return from Home Base (with workaround for dig.goto at origin)**
 local function gotoHomeBase()
     -- Save the current location *before* moving
     saved_location = dig.location()
     send_log_message("Returning to home base...", colors.yellow)
 
-    -- Move to home base coordinates (0, 0, 0) and face South (180)
-    -- dig.goto handles movement in the correct order (Y then X then Z)
-    dig.goto(home_base_coords.x, home_base_coords.y, home_base_coords.z, home_base_coords.r)
-    checkAndSendStatus() -- Send status after arriving at base
+    -- Attempt to move to home base coordinates (0, 0, 0) and face South (180)
+    local success = dig.goto(home_base_coords.x, home_base_coords.y, home_base_coords.z, home_base_coords.r)
+    checkAndSendStatus() -- Send status after attempting to arrive at base
 
-    return saved_location -- Return the saved location
+    -- **WORKAROUND:** Check if the turtle is actually AT the home base coords/rotation
+    -- If it is, consider the goto successful even if dig.goto returned false.
+    if dig.getx() == home_base_coords.x and
+       dig.gety() == home_base_coords.y and
+       dig.getz() == home_base_coords.z and
+       dig.getr() % 360 == home_base_coords.r then -- Use modulo for rotation comparison
+       send_log_message("Confirmed arrival at home base.", colors.lightBlue)
+       return saved_location -- Return the saved location (indicating success)
+    end
+
+    -- If dig.goto failed AND the turtle is not at the home base coords, then report failure
+    if not success then
+        send_log_message("Failed to reach home base.", colors.red)
+        -- Consider a fallback or just stop if cannot reach base
+        return nil -- Indicate failure
+    end
+
+    -- If dig.goto succeeded but the turtle is somehow not at the exact coords (unlikely, but as a failsafe)
+    -- This case should ideally not happen if dig.goto is working correctly.
+    send_log_message("Reached near home base, but coordinates not exact.", colors.orange)
+    return saved_location -- Return the saved location (treating as success for now)
 end
 
 local function returnFromHomeBase(loc)
@@ -202,7 +352,7 @@ local function returnFromHomeBase(loc)
 
     -- Return to the saved coordinates and rotation
     -- dig.goto handles movement in the correct order
-    dig.goto(loc[1], loc[2], loc[3], loc[4])
+    local success = dig.goto(loc[1], loc[2], loc[3], loc[4])
 
     -- After returning, perform checks
     checkAndSendStatus() -- Send status after returning
@@ -211,11 +361,108 @@ local function returnFromHomeBase(loc)
     -- checkInv() -- Check inventory after moving back (already handled in manageSupplies)
     dig.checkBlocks() -- Check building blocks
 
-    return true -- Indicate successful return
+    if not success then
+         send_log_message("Failed to return to mining location.", colors.red)
+    end
+    return success -- Indicate successful return
+end
+-- Helper function to interact with home chest
+local function interactWithHomeChest(callback)
+    -- Save current rotation
+    local current_r = dig.getr()
+    -- Turn around to face chest (180 degrees from North)
+    dig.gotor(180)
+    -- Do the chest interaction
+    local result = callback()
+    -- Return to original rotation only if we haven't found what we needed
+    if not result then
+        dig.gotor(current_r)
+    end
+    return result
+end
+
+-- **ADDED: Pause function to wait for items in chest/inventory**
+local function pauseUntilItemAvailable(item_names, chest_side, min_count)
+    if not item_names then
+        send_log_message("Error: No item names provided to wait for", colors.red)
+        return false
+    end
+    
+    local min_count = min_count or 1
+    local item_found_in_inventory_or_chest = false
+    local chest = chest_side and peripheral.wrap(chest_side)
+    
+    -- Convert single string to table for consistent handling
+    local items_to_check = type(item_names) == 'string' and {item_names} or item_names
+    
+    -- Create readable item list for message
+    local item_list = table.concat(items_to_check, " or ")
+    send_log_message("Waiting for " .. item_list .. " in inventory or chest...", colors.orange)
+    checkAndSendStatus()
+
+    -- First check inventory before any chest interaction
+    for slot = 1, 16 do
+        if flex.isItem(items_to_check, slot) and turtle.getItemCount(slot) >= min_count then
+            item_found_in_inventory_or_chest = true
+            return true
+        end
+    end
+
+    -- Only interact with chest if we need to
+    if not item_found_in_inventory_or_chest and chest then
+        return interactWithHomeChest(function()
+            local attempts = 0
+            while not item_found_in_inventory_or_chest and attempts < 3 do
+                local chest_items = chest.list()
+                if chest_items then
+                    for chest_slot, item_detail in pairs(chest_items) do
+                        for _, name in ipairs(items_to_check) do
+                            if item_detail.name == name and item_detail.count >= min_count then
+                                -- Found matching item, try to pull it
+                                local target_slot = -1
+                                for try_slot = 10, 16 do
+                                    if turtle.getItemCount(try_slot) == 0 then
+                                        target_slot = try_slot
+                                        break
+                                    end
+                                end
+                                
+                                if target_slot ~= -1 then
+                                    local original_slot = turtle.getSelectedSlot()
+                                    turtle.select(target_slot)
+                                    local pulled_count = chest.pullItems(chest_side, chest_slot, min_count, target_slot)
+                                    if pulled_count > 0 then
+                                        item_found_in_inventory_or_chest = true
+                                        send_log_message("Retrieved " .. pulled_count .. " " .. item_detail.name .. " from chest", colors.lightBlue)
+                                        turtle.select(original_slot)
+                                        return true
+                                    end
+                                    turtle.select(original_slot)
+                                end
+                            end
+                        end
+                    end
+                end
+                attempts = attempts + 1
+                if not item_found_in_inventory_or_chest then
+                    sleep(2) -- Wait before checking chest again
+                    checkAndSendStatus()
+                end
+            end
+            return false
+        end)
+    end
+
+    if not item_found_in_inventory_or_chest then
+        sleep(2)
+        checkAndSendStatus()
+    end
+
+    return item_found_in_inventory_or_chest
 end
 
 
--- **MODIFIED: dump function - Use home base for dumping**
+-- **MODIFIED: dump function - Use home base for dumping (removed coal crafting)**
 function dump()
  local slot = turtle.getSelectedSlot()
  -- Define items that should NOT be dumped
@@ -243,22 +490,31 @@ function dump()
 
  if #items_to_dump > 0 then
      local loc = gotoHomeBase() -- Go to home base
+     if not loc then return false end -- Stop if cannot reach home base
+
      -- Interact with the home chest to dump items
-     local chest = peripheral.wrap(home_chest_side)
-     if chest and chest.pushItems then -- Check if it's a valid inventory peripheral
-         send_log_message("Dumping items into chest...", colors.yellow)
-         for _, item in ipairs(items_to_dump) do
-             turtle.select(item.slot)
-             local success, dumped_count = chest.pushItems(home_chest_side, item.slot, item.count) -- Dump item into chest
-             if success then
-                  send_log_message("Dumped "..tostring(dumped_count).." "..item.name, colors.lightBlue)
-             else
-                  send_log_message("Failed to dump "..item.name, colors.orange)
+     local success = interactWithHomeChest(function()
+         local chest = peripheral.wrap(home_chest_side)
+         if chest and chest.pushItems then -- Check if it's a valid inventory peripheral
+             send_log_message("Dumping items into chest...", colors.yellow)
+             for _, item in ipairs(items_to_dump) do
+                 turtle.select(item.slot)
+                 local success, dumped_count = chest.pushItems(home_chest_side, item.slot, item.count) -- Dump item into chest
+                 if success then
+                      send_log_message("Dumped "..tostring(dumped_count).." "..item.name, colors.lightBlue)
+                 else
+                      send_log_message("Failed to dump "..item.name, colors.orange)
+                 end
+                 checkAndSendStatus() -- Send status after each dump attempt
              end
-             checkAndSendStatus() -- Send status after each dump attempt
+             send_log_message("Dumping complete.", colors.lightBlue)
+             return true
+         else
+             return false
          end
-         send_log_message("Dumping complete.", colors.lightBlue)
-     else
+     end)
+
+     if not success then
          send_log_message("No chest found on side '"..home_chest_side.."' at home base. Cannot dump items.", colors.red)
          -- Fallback: just drop items if chest is not found
          send_log_message("Dropping items instead.", colors.orange)
@@ -272,74 +528,13 @@ function dump()
      end
 
      turtle.select(slot) -- Restore original selected slot
-     -- Removed backpack/shulker box logic from dump, assuming it's handled elsewhere or not used this way with home chest
      dig.checkBlocks() -- Ensure building blocks are in selected slot
      flex.condense() -- Condense inventory
      returnFromHomeBase(loc) -- Return from home base
  end
 
-
- -- **MODIFIED: Craft coal into blocks using turtle.craft() - Keep this outside of dumping logic**
- -- This can happen anywhere the turtle has 9 coal, not just at base.
- local coal_count = 0
- for x=1,16 do
-     local item = turtle.getItemDetail(x)
-     if item and flex.isItem(name_coal, x) then -- Check if it's coal using the name_coal table
-         coal_count = coal_count + item.count
-     end
- end
-
- if coal_count >= 9 then
-     local num_blocks_to_craft = math.floor(coal_count / 9)
-     send_log_message("Crafting "..tostring(num_blocks_to_craft).." coal blocks...", colors.yellow) -- Use wrapper
-     local original_slot = turtle.getSelectedSlot()
-     -- To craft coal blocks, need 9 coal in a 3x3 grid.
-     -- Clear crafting slots (1-9) first
-     for i = 1, 9 do clearCraftingSlot(i) end
-     -- Find coal and move 9 to crafting slots (e.g., 1-9)
-     local coal_placed = 0
-     for slot = 1, 16 do
-         if flex.isItem(name_coal, slot) then
-             local count_in_slot = turtle.getItemCount(slot)
-             local amount_to_move = math.min(count_in_slot, 9 - coal_placed)
-             if amount_to_move > 0 then
-                 for i = 1, 9 do
-                     if turtle.getItemCount(i) == 0 then
-                         turtle.select(slot)
-                         turtle.transferTo(i, 1) -- Move 1 coal at a time to fill grid
-                         coal_placed = coal_placed + 1
-                         amount_to_move = amount_to_move - 1
-                         if coal_placed >= 9 or amount_to_move <= 0 then break end
-                     end
-                 end
-             end
-         end
-         if coal_placed >= 9 then break end
-     end
-
-     if coal_placed >= 9 then
-         turtle.select(1) -- Select any slot for crafting output (coal blocks can go anywhere)
-         local success = turtle.craft() -- Crafting Coal Blocks
-         if success then
-             send_log_message("Crafting successful.", colors.lightBlue) -- Use wrapper
-             -- Clear crafting slots after crafting
-             for i = 1, 9 do clearCraftingSlot(i) end
-         else
-             send_log_message("Crafting failed.", colors.orange) -- Use wrapper
-             -- Attempt to move items back to temporary slots or consolidate
-             for i = 1, 9 do clearCraftingSlot(i) end
-         end
-     else
-         send_log_message("Not enough coal in inventory to craft coal blocks.", colors.orange)
-         -- Clear crafting slots if partially filled
-         for i = 1, 9 do clearCraftingSlot(i) end
-     end
-
-     turtle.select(original_slot) -- Restore selected slot
-     checkAndSendStatus() -- Send status after crafting
- end
- -- End of modified crafting logic
-
+ -- Removed coal block crafting logic from here
+ return true -- Indicate dump process attempted
 end --function
 
 
@@ -352,8 +547,9 @@ if #args > 0 and args[1] == "help" then
    "left of a turtle quarrying the same "..
    "dimensions.",colors.lightBlue)
  send_log_message("Include a chest at the origin (0,0,0) BEHIND the turtle\n".. -- Mention home chest is behind
-   "to auto-dump items, refuel, and get/craft torches.", colors.yellow)
- send_log_message("Provide Wood Logs, Coal, and Sticks in the chest to craft torches.", colors.yellow) -- Mention crafting materials
+   "to auto-dump items and get Fuel, Stair Blocks, and Torches.", colors.yellow) -- Updated message
+ -- Removed crafting materials as crafting is removed
+ -- send_log_message("Provide Wood Logs, Coal, and Sticks in the chest to craft torches.", colors.yellow)
  send_log_message("Usage: stairs ".. -- Use wrapper
    "[length] [width] [depth]",colors.pink)
  return
@@ -363,7 +559,7 @@ end --if
 -- What Goes Where
 send_log_message("Slot 1: Fuel\n".. -- Use wrapper
   "Slot 2: Blocks\nSlot 3: Torches\n"..
-  "Home Chest (at 0,0,0 BEHIND the turtle): Dumping, Fuel, Torches, Crafting Materials (Wood Logs, Coal, Sticks)", -- Updated message
+  "Home Chest (at 0,0,0 BEHIND the turtle): Dumping, Fuel, Stair Blocks, Torches", -- Updated message
   colors.lightBlue)
 flex.printColors("Press Enter", -- Keep this as flex.printColors for local display only
   colors.pink)
@@ -386,377 +582,127 @@ dy = tonumber(args[3]) or 256
 -- -1 to match Quarry depth
 
 
--- Helper function to check and send status periodically
-local function checkAndSendStatus()
-     local current_epoch_time_ms = os.epoch("local") or 0
-     -- **FIXED: Ensure last_status_sent_time is a number before calculation**
-     local time_difference_ms = 0
-     if type(last_status_sent_time) == 'number' then
-         time_difference_ms = current_epoch_time_ms - last_status_sent_time
-     else
-         -- Initialize last_status_sent_time if it's not a number
-         last_status_sent_time = current_epoch_time_ms
-     end
 
 
-     if type(current_epoch_time_ms) == 'number' and time_difference_ms >= status_send_interval then
-         sendStatus()
-         last_status_sent_time = current_epoch_time_ms -- Update last sent time
-     end
-end
-
--- **ADDED: checkFuel function (modified)**
+-- **MODIFIED: checkFuel function - Get fuel from chest and pause if needed**
 local function checkFuel()
     local current_fuel = turtle.getFuelLevel()
     local estimated_fuel_needed = 500 -- Simple estimate: always try to keep at least 500 fuel
-    -- You might need a more sophisticated estimate based on remaining steps
+
+    -- First check if we already have usable fuel in slot 1
+    local current_slot = turtle.getSelectedSlot()
+    turtle.select(1)
+    if turtle.getItemCount(1) > 0 and turtle.refuel(0) then
+        -- We have fuel in slot 1, try to use it
+        local success = turtle.refuel(64) -- Try to use up to 64 items
+        if success and turtle.getFuelLevel() >= estimated_fuel_needed then
+            turtle.select(current_slot)
+            return false -- We got enough fuel, no need to go to base
+        end
+    end
+    turtle.select(current_slot)
 
     if current_fuel < estimated_fuel_needed then
         send_log_message("Fuel low, returning to home base for fuel...", colors.yellow)
         local loc = gotoHomeBase() -- Go to home base
+        if not loc then return false end -- Stop if cannot reach home base
 
         -- Interact with the home chest to get fuel
         local chest = peripheral.wrap(home_chest_side)
         if chest and chest.pullItems then -- Check if it's a valid inventory peripheral
             send_log_message("Attempting to get fuel from chest...", colors.yellow)
             local fuel_pulled_count = 0
-            -- Try to pull fuel items (coal, lava buckets, etc.) from the chest
-            local fuel_item_names = { "minecraft:coal", "minecraft:coal_block", "minecraft:lava_bucket" }
-            local original_selected_slot = turtle.getSelectedSlot()
+            -- Try to pull fuel items (coal, coal blocks, lava buckets) from the chest
+            local fuel_item_names = { "minecraft:coal", "minecraft:coal_block", "minecraft:lava_bucket", "forge:coal", "forge:coal_blocks" }
+            local original_slot = turtle.getSelectedSlot()
             turtle.select(1) -- Select fuel slot
 
-            for _, fuel_name in ipairs(fuel_item_names) do
-                local success, pulled = chest.pullItems(home_chest_side, -1, 64, fuel_name) -- Pull up to 64 of the fuel item from any slot (-1)
-                if success then
-                    fuel_pulled_count = fuel_pulled_count + pulled
-                    turtle.refuel(pulled) -- Refuel with the pulled items
-                    send_log_message("Pulled and used "..tostring(pulled).." "..fuel_name.." for fuel.", colors.lightBlue)
-                     checkAndSendStatus() -- Send status after refueling
+            -- First check what's in the chest
+            local chest_items = chest.list()
+            if chest_items then
+                for slot, item in pairs(chest_items) do
+                    for _, fuel_name in ipairs(fuel_item_names) do
+                        if item.name == fuel_name then
+                            -- Found fuel, try to pull it
+                            local pulled = chest.pullItems(home_chest_side, slot, 64, 1) -- Pull to slot 1
+                            if pulled > 0 and turtle.refuel(0) then -- Check if item is valid fuel
+                                turtle.refuel(pulled) -- Use the fuel
+                                fuel_pulled_count = fuel_pulled_count + pulled
+                                send_log_message("Pulled and used "..tostring(pulled).." "..item.name.." for fuel.", colors.lightBlue)
+                                checkAndSendStatus()
+                                if turtle.getFuelLevel() >= estimated_fuel_needed then
+                                    turtle.select(original_slot)
+                                    send_log_message("Refueling complete.", colors.lightBlue)
+                                    returnFromHomeBase(loc)
+                                    return true
+                                end
+                            end
+                        end
+                    end
                 end
-                 if turtle.getFuelLevel() >= estimated_fuel_needed * 2 then break end -- Stop if enough fuel is acquired (refuel to double needed)
             end
-            turtle.select(original_selected_slot) -- Restore selected slot
 
-
-            if fuel_pulled_count > 0 then
-                send_log_message("Refueling complete.", colors.lightBlue)
-            else
-                send_log_message("Could not find or get fuel from chest.", colors.orange)
+            -- If we got here, we didn't find enough fuel
+            turtle.select(original_slot)
+            send_log_message("Could not acquire enough fuel from chest.", colors.orange)
+            if turtle.getFuelLevel() < 200 then -- Critical fuel level
+                send_log_message("Critical fuel level! Cannot continue.", colors.red)
+                return false
             end
         else
             send_log_message("No chest found on side '"..home_chest_side.."' at home base. Cannot get fuel.", colors.red)
         end
 
         returnFromHomeBase(loc) -- Return from home base
-        return true -- Indicate fuel was handled
+        return true -- Indicate fuel check was handled
     end
     return false -- Indicate fuel is sufficient
 end
 
--- Helper to find the first slot with a specific item (excluding essential and crafting slots)
-local function findCraftingMaterial(item_names, exclude_slots)
-    local exclude = exclude_slots or {}
-    for slot = 1, 16 do
-        local is_excluded = false
-        for _, exclude_slot in ipairs(exclude) do
-            if slot == exclude_slot then
-                is_excluded = true
-                break
-            end
-        end
-        if not is_excluded then
-            local item = turtle.getItemDetail(slot)
-            if item and flex.isItem(item_names, slot) then
-                return slot
-            end
-        end
-    end
-    return nil -- Not found
-end
-
--- Helper to move items for crafting
-local function moveItemToCraftingSlot(from_slot, to_crafting_slot, amount)
-    if turtle.getItemCount(from_slot) > 0 then
-        turtle.select(from_slot)
-        local success = turtle.transferTo(to_crafting_slot, amount)
-        return success
-    end
-    return false
-end
-
--- Helper to clear a crafting grid slot by moving its contents to a temporary slot (10-16)
-local function clearCraftingSlot(crafting_slot)
-    if turtle.getItemCount(crafting_slot) > 0 then
-        for temp_slot = 10, 16 do
-            if turtle.getItemCount(temp_slot) == 0 then
-                turtle.select(crafting_slot)
-                local success = turtle.transferTo(temp_slot)
-                return success -- Successfully moved
-            end
-             -- Check if items can be stacked in the temp slot
-            local temp_item = turtle.getItemDetail(temp_slot)
-            local crafting_item = turtle.getItemDetail(crafting_slot)
-            if temp_item and crafting_item and temp_item.name == crafting_item.name and turtle.getItemSpace(temp_slot) > 0 then
-                 turtle.select(crafting_slot)
-                 local success = turtle.transferTo(temp_slot)
-                 return success -- Successfully stacked
-            end
-        end
-        -- Could not find an empty or stackable temporary slot (unlikely with dumping first, but fallback)
-        send_log_message("Warning: Could not clear crafting slot "..tostring(crafting_slot).." to temporary slots.", colors.orange)
-        return false -- Failed to move
-    end
-    return true -- Slot is already empty
-end
+-- Removed crafting helper functions as crafting is removed
+-- local function findCraftingMaterial(item_names, exclude_slots) ... end
+-- local function moveItemToCraftingSlot(from_slot, to_crafting_slot, amount) ... end
+-- local function clearCraftingSlot(crafting_slot) ... end
 
 
--- **MODIFIED: manageTorchesAtBase function - Enhanced Crafting Logic**
+-- **MODIFIED: manageTorchesAtBase function - Check inventory first**
 local function manageTorchesAtBase()
     local current_torches = turtle.getItemCount(3) -- Check torch slot (slot 3)
-    local min_torches = 16 -- Keep at least 16 torches
+    local min_torches = 1 -- Keep at least 1 torch
     local needed_torches = min_torches - current_torches
+
+    -- First check if we already have enough torches before doing anything
+    if current_torches >= min_torches then
+        return true -- We have enough torches, no need to go to base
+    end
 
     if needed_torches > 0 then
         send_log_message("Torch count low ("..tostring(current_torches).."), managing torches at base...", colors.yellow)
         local loc = gotoHomeBase() -- Go to home base
+        if not loc then return false end -- Stop if cannot reach home base
 
         local chest = peripheral.wrap(home_chest_side)
         if chest and chest.pullItems and chest.pushItems and chest.list then -- Check if it's a valid inventory peripheral with required methods
-            send_log_message("Managing torches using chest...", colors.yellow)
+            send_log_message("Attempting to get torches from chest...", colors.yellow)
+
+            -- Pause and wait if no torches are found in inventory or chest
+             pauseUntilItemAvailable(name_torch, home_chest_side, needed_torches)
 
             local original_selected_slot = turtle.getSelectedSlot()
+            turtle.select(3) -- Select torch slot
 
-            -- 1. Dump all non-essential items to the chest to free up inventory space
-            -- Re-using logic from dump, but operating at home base
-            local non_dump_slots = {1, 2, 3} -- Fuel, Blocks, Torches (these are essential for the task itself)
-            local keepers = {name_box, name_chest} -- Items that should be kept if in other slots
-
-            send_log_message("Dumping non-essential items to chest before crafting...", colors.yellow)
-            for x=1,16 do
-                 local item_detail = turtle.getItemDetail(x)
-                 if item_detail and not flex.isItem(keepers, x) then
-                      local is_nondump_slot = false
-                      for _, non_dump_slot in ipairs(non_dump_slots) do
-                           if x == non_dump_slot then
-                                is_nondump_slot = true
-                                break
-                           end
-                      end
-                      if not is_nondump_slot then
-                            turtle.select(x)
-                            local success, dumped_count = chest.pushItems(home_chest_side, x, turtle.getItemCount(x))
-                            if success then
-                                 send_log_message("Dumped "..tostring(dumped_count).." "..item_detail.name, colors.lightBlue)
-                            end
-                             checkAndSendStatus()
-                      end
-                 end
-            end
-            send_log_message("Dumping complete.", colors.lightBlue)
-             checkAndSendStatus()
-
-             -- 2. Pull necessary crafting materials from chest
-            local needed_sticks_total = math.ceil(needed_torches / 4) -- Total sticks needed
-            local needed_coal_total = math.ceil(needed_torches / 4) -- Total coal needed
-            local needed_planks_total = needed_sticks_total * 2 -- 2 planks per stick
-            local needed_wood_total = math.ceil(needed_planks_total / 4) -- 1 wood log per 4 planks
-
-             -- Try to pull more than exactly needed in case of crafting inefficiencies or stacking issues
-             local pull_multiplier = 1.5 -- Pull 150% of what is theoretically needed
-
-            send_log_message("Pulling crafting materials from chest...", colors.yellow)
-             local materials_pulled = 0
-
-            -- Pull Sticks first
-            local sticks_to_pull = math.max(0, math.ceil(needed_sticks_total * pull_multiplier) - turtle.getItemCount(name_stick))
-             if sticks_to_pull > 0 then
-                 local success, pulled = chest.pullItems(home_chest_side, -1, sticks_to_pull, name_stick)
-                 if success then materials_pulled = materials_pulled + pulled; send_log_message("Pulled "..tostring(pulled).." sticks.", colors.lightBlue); checkAndSendStatus(); end
+             -- Now that item is available (either was there or pulled), try to pull again if needed
+            local current_torches_after_wait = turtle.getItemCount(3)
+             if current_torches_after_wait < min_torches then
+                local success, pulled = chest.pullItems(home_chest_side, -1, min_torches - current_torches_after_wait, name_torch) -- Pull needed torches from any slot (-1)
+                if success and pulled > 0 then
+                    send_log_message("Pulled "..tostring(pulled).." torches from chest.", colors.lightBlue)
+                    checkAndSendStatus()
+                else
+                     send_log_message("Could not acquire enough torches from chest after waiting.", colors.orange)
+                end
              end
 
-            -- Pull Coal
-            local coal_to_pull = math.max(0, math.ceil(needed_coal_total * pull_multiplier) - turtle.getItemCount(name_coal))
-             if coal_to_pull > 0 then
-                 local success, pulled = chest.pullItems(home_chest_side, -1, coal_to_pull, name_coal)
-                 if success then materials_pulled = materials_pulled + pulled; send_log_message("Pulled "..tostring(pulled).." coal.", colors.lightBlue); checkAndSendStatus(); end
-             end
-
-             -- Pull Planks
-             local planks_to_pull = math.max(0, math.ceil(needed_planks_total * pull_multiplier) - turtle.getItemCount(name_planks))
-             if planks_to_pull > 0 then
-                 local success, pulled = chest.pullItems(home_chest_side, -1, planks_to_pull, name_planks)
-                 if success then materials_pulled = materials_pulled + pulled; send_log_message("Pulled "..tostring(pulled).." planks.", colors.lightBlue); checkAndSendStatus(); end
-             end
-
-            -- Pull Wood Logs
-            local wood_to_pull = math.max(0, math.ceil(needed_wood_total * pull_multiplier) - turtle.getItemCount(name_wood_log))
-             if wood_to_pull > 0 then
-                 local success, pulled = chest.pullItems(home_chest_side, -1, wood_to_pull, name_wood_log)
-                 if success then materials_pulled = materials_pulled + pulled; send_log_message("Pulled "..tostring(pulled).." wood logs.", colors.lightBlue); checkAndSendStatus(); end
-             end
-
-             if materials_pulled == 0 then
-                 send_log_message("Could not pull any crafting materials from chest.", colors.orange)
-             end
-             checkAndSendStatus()
-
-
-            -- 3. Crafting Process (Wood -> Planks -> Sticks -> Torches)
-            send_log_message("Starting crafting process...", colors.yellow)
-
-             -- Helper function to get item count by name (faster than iterating every time)
-             local function countItemsByName(item_names)
-                 local count = 0
-                 for slot = 1, 16 do
-                     if flex.isItem(item_names, slot) then
-                         count = count + turtle.getItemCount(slot)
-                     end
-                 end
-                 return count
-             end
-
-             local current_wood_logs = countItemsByName(name_wood_log)
-             local current_planks = countItemsByName(name_planks)
-             local current_sticks = countItemsByName(name_stick)
-             local current_coal = countItemsByName(name_coal)
-
-
-            -- Craft Planks from Wood Logs
-            while current_wood_logs > 0 and current_planks < needed_planks_total + 4 do -- Craft some extra planks
-                 -- Clear crafting slots 1-9
-                 for i = 1, 9 do if not clearCraftingSlot(i) then goto next_crafting_step end end -- Exit if cannot clear
-
-                 -- Find and move 1 wood log to slot 1
-                 local wood_slot = findCraftingMaterial(name_wood_log, non_dump_slots) -- Find wood outside essential slots
-                 if not wood_slot then break end -- No more wood logs
-                 if not moveItemToCraftingSlot(wood_slot, 1, 1) then break end -- Move 1 log to slot 1
-
-                 -- Craft planks
-                 send_log_message("Crafting planks...", colors.yellow)
-                 turtle.select(1) -- Select a slot for output (e.g., slot 1)
-                 local success = turtle.craft() -- Craft planks (1 log in grid)
-                 if success then
-                      send_log_message("Crafted planks.", colors.lightBlue); checkAndSendStatus()
-                      current_wood_logs = current_wood_logs - 1 -- Assume 1 log was consumed
-                      current_planks = current_planks + 4 -- Assume 4 planks crafted
-                 else
-                      send_log_message("Failed to craft planks.", colors.orange); checkAndSendStatus(); break
-                 end
-                 -- Clear crafting slots after crafting
-                 for i = 1, 9 do clearCraftingSlot(i) end
-
-                 current_wood_logs = countItemsByName(name_wood_log) -- Re-count
-                 current_planks = countItemsByName(name_planks) -- Re-count
-            end
-            ::next_crafting_step::
-             checkAndSendStatus()
-
-
-             -- Craft Sticks from Planks
-             while current_planks >= 2 and current_sticks < needed_sticks_total do
-                 -- Clear crafting slots 1-9
-                 for i = 1, 9 do if not clearCraftingSlot(i) then goto next_crafting_step2 end end -- Exit if cannot clear
-
-                 -- Find and move 2 planks to slots 1 and 5
-                 local plank_slot1 = findCraftingMaterial(name_planks, non_dump_slots)
-                 if not plank_slot1 then break end
-                 if not moveItemToCraftingSlot(plank_slot1, 1, 1) then break end
-
-                 local plank_slot2 = findCraftingMaterial(name_planks, non_dump_slots)
-                 if not plank_slot2 then -- If only 1 plank left, break
-                    clearCraftingSlot(1) -- Clear slot 1 as we can't craft sticks
-                    break
-                 end
-                 if not moveItemToCraftingSlot(plank_slot2, 5, 1) then clearCraftingSlot(1); break end -- Move 2nd plank to slot 5
-
-
-                 -- Craft sticks
-                 send_log_message("Crafting sticks...", colors.yellow)
-                 turtle.select(1) -- Select a slot for output (e.g., slot 1)
-                 local success = turtle.craft() -- Craft sticks (2 planks in grid)
-                 if success then
-                    send_log_message("Crafted sticks.", colors.lightBlue); checkAndSendStatus()
-                    current_planks = current_planks - 2 -- Assume 2 planks consumed
-                    current_sticks = current_sticks + 4 -- Assume 4 sticks crafted
-                 else
-                    send_log_message("Failed to craft sticks.", colors.orange); checkAndSendStatus(); break
-                 end
-                 -- Clear crafting slots after crafting
-                 for i = 1, 9 do clearCraftingSlot(i) end
-
-                 current_planks = countItemsByName(name_planks) -- Re-count
-                 current_sticks = countItemsByName(name_stick) -- Re-count
-            end
-            ::next_crafting_step2::
-             checkAndSendStatus()
-
-
-            -- Craft Torches from Coal and Sticks
-            while current_coal >= 1 and current_sticks >= 1 and turtle.getItemCount(3) < min_torches do
-                 -- Clear crafting slots 1-9
-                 for i = 1, 9 do if not clearCraftingSlot(i) then goto end_crafting_process end end -- Exit if cannot clear
-
-                 -- Find and move 1 coal to slot 1
-                 local coal_slot = findCraftingMaterial(name_coal, {1}) -- Find coal outside fuel slot
-                 if not coal_slot then break end
-                 if not moveItemToCraftingSlot(coal_slot, 1, 1) then break end
-
-                 -- Find and move 1 stick to slot 5
-                 local stick_slot = findCraftingMaterial(name_stick, {3}) -- Find stick outside torch slot
-                 if not stick_slot then clearCraftingSlot(1); break end -- If no sticks, clear coal and break
-                 if not moveItemToCraftingSlot(stick_slot, 5, 1) then clearCraftingSlot(1); break end -- Move stick to slot 5
-
-
-                 -- Craft torches
-                 send_log_message("Crafting torches...", colors.yellow)
-                 turtle.select(3) -- Select torch slot for output
-                 local success = turtle.craft() -- Craft torches (1 coal, 1 stick in grid)
-                 if success then
-                     send_log_message("Crafted torches.", colors.lightBlue)
-                     checkAndSendStatus()
-                     current_coal = current_coal - 1 -- Assume 1 coal consumed
-                     current_sticks = current_sticks - 1 -- Assume 1 stick consumed
-                     -- Torches crafted go directly to slot 3
-                 else
-                     send_log_message("Crafting failed.", colors.orange)
-                     checkAndSendStatus(); break
-                 end
-                 -- Clear crafting slots after crafting
-                 for i = 1, 9 do clearCraftingSlot(i) end
-
-                 current_coal = countItemsByName(name_coal) -- Re-count
-                 current_sticks = countItemsByName(name_stick) -- Re-count
-            end
-            ::end_crafting_process::
-             checkAndSendStatus()
-
-
-            -- 4. Return excess crafting materials to the chest
-            send_log_message("Returning excess crafting materials to chest...", colors.yellow)
-            local crafting_materials_to_return = { name_wood_log, name_planks, name_coal, name_stick }
-            for x=1,16 do
-                 local item_detail = turtle.getItemDetail(x)
-                 if item_detail and flex.isItem(crafting_materials_to_return, x) then
-                     turtle.select(x)
-                      -- Ensure not in essential slots (fuel, blocks, torches)
-                      local is_essential_slot = false
-                      for _, essential_slot in ipairs({1, 2, 3}) do
-                           if x == essential_slot then
-                                is_essential_slot = true
-                                break
-                           end
-                      end
-                      if not is_essential_slot then
-                          local success, returned_count = chest.pushItems(home_chest_side, x, turtle.getItemCount(x))
-                          if success then
-                               send_log_message("Returned "..tostring(returned_count).." "..item_detail.name, colors.lightBlue)
-                          end
-                           checkAndSendStatus()
-                      end
-                 end
-            end
-            send_log_message("Returning complete.", colors.lightBlue)
-             checkAndSendStatus()
 
             turtle.select(original_selected_slot) -- Restore selected slot
 
@@ -764,10 +710,14 @@ local function manageTorchesAtBase()
                 send_log_message("Torch management complete. Have "..tostring(turtle.getItemCount(3)).." torches.", colors.lightBlue)
             else
                 send_log_message("Could not acquire enough torches. Have "..tostring(turtle.getItemCount(3)).." torches.", colors.orange)
+                 -- Still pause if torch management failed even after initial wait
+                 -- pauseUntilItemAvailable(name_torch, home_chest_side, needed_torches)
             end
 
         else
-            send_log_message("No chest found on side '"..home_chest_side.."' at home base or missing required peripheral methods. Cannot manage torches.", colors.red)
+            send_log_message("No chest found on side '"..home_chest_side.."' at home base or missing required peripheral methods. Cannot get torches.", colors.red)
+             -- Pause if no chest is found
+             pauseUntilItemAvailable(name_torch, nil, needed_torches) -- Pass nil for chest_side to only check inventory
         end
 
         returnFromHomeBase(loc) -- Return from home base
@@ -776,15 +726,94 @@ local function manageTorchesAtBase()
     return false -- Indicate enough torches are available
 end
 
--- **ADDED: manageSupplies function**
+-- **MODIFIED: Fix block pulling in manageSupplies**
 local function manageSupplies()
     -- Check inventory first (dumps), then fuel, then torches.
-    -- Dumping might free up space for fuel/torches.
+    -- Dumping might free up space for fuel/torches/blocks.
     local inventory_handled = dump() -- dump now handles going to base, dumping, and returning
-    local fuel_handled = checkFuel() -- checkFuel now handles going to base, refueling, and returning
-    local torches_handled = manageTorchesAtBase() -- manageTorchesAtBase handles going to base, getting/crafting, and returning
+    if not inventory_handled then return false end -- Stop if dump failed
 
-    return inventory_handled or fuel_handled or torches_handled
+    local fuel_handled = checkFuel() -- checkFuel now handles going to base, refueling, and returning
+    if not fuel_handled then return false end -- Stop if fuel check/get failed
+
+    local torches_handled = manageTorchesAtBase() -- manageTorchesAtBase handles going to base, getting torches, and returning
+    if not torches_handled then return false end -- Stop if torch check/get failed
+
+    -- Now check and get blocks (stairs)
+    local blocks_needed = dig.getBlockStacks() * 64 - turtle.getItemCount(2) -- Need a full stack in block slot (slot 2)
+    local min_blocks = 64 -- At least one stack
+
+    if turtle.getItemCount(2) < min_blocks then
+        send_log_message("Building block count low ("..tostring(turtle.getItemCount(2)).."), managing blocks at base...", colors.yellow)
+        local loc = gotoHomeBase() -- Go to home base
+         if not loc then return false end -- Stop if cannot reach home base
+
+        local chest = peripheral.wrap(home_chest_side)
+        if chest and chest.pullItems and chest.pushItems and chest.list then
+             send_log_message("Attempting to get building blocks from chest...", colors.yellow)
+
+             -- Pause and wait if no blocks are found in inventory or chest
+             pauseUntilItemAvailable({name_cobble, name_stairs}, home_chest_side, min_blocks)
+
+             local original_selected_slot = turtle.getSelectedSlot()
+             turtle.select(2) -- Select block slot
+
+              -- Now that item is available (either was there or pulled), try to pull again if needed
+             local current_blocks_after_wait = turtle.getItemCount(2)
+             if current_blocks_after_wait < min_blocks then
+                 local pulled_count = 0
+                 local chest_items = chest.list()
+                 if chest_items then
+                     -- Try cobblestone first
+                     for slot, item in pairs(chest_items) do
+                         if item.name == "minecraft:cobblestone" then
+                             local pull_count = math.min(64, min_blocks - current_blocks_after_wait)
+                             local pulled = chest.pullItems(home_chest_side, slot, pull_count)
+                             if pulled > 0 then
+                                 pulled_count = pulled_count + pulled
+                                 send_log_message("Pulled "..tostring(pulled).." cobblestone.", colors.lightBlue)
+                                 checkAndSendStatus()
+                             end
+                             if pulled_count >= min_blocks then break end
+                         end
+                     end
+
+                     -- If still need more, try stairs
+                     if pulled_count < min_blocks then
+                         for slot, item in pairs(chest_items) do
+                             if item.name == "minecraft:cobblestone_stairs" then
+                                 local pull_count = math.min(64, min_blocks - pulled_count)
+                                 local pulled = chest.pullItems(home_chest_side, slot, pull_count)
+                                 if pulled > 0 then
+                                     pulled_count = pulled_count + pulled
+                                     send_log_message("Pulled "..tostring(pulled).." stairs.", colors.lightBlue)
+                                     checkAndSendStatus()
+                                 end
+                                 if pulled_count >= min_blocks then break end
+                             end
+                         end
+                     end
+
+                     if pulled_count > 0 then
+                         send_log_message("Building block management complete. Have "..tostring(turtle.getItemCount(2)).." blocks.", colors.lightBlue)
+                     else
+                         send_log_message("Could not acquire enough building blocks from chest after waiting.", colors.orange)
+                     end
+                 end
+             end
+            turtle.select(original_selected_slot) -- Restore selected slot
+             dig.checkBlocks() -- Ensure block slot is correct after pulling
+        else
+             send_log_message("No chest found on side '"..home_chest_side.."' at home base or missing required peripheral methods. Cannot get building blocks.", colors.red)
+              -- Pause if no chest is found
+             pauseUntilItemAvailable({name_cobble, name_stairs}, nil, min_blocks) -- Pass nil for chest_side to only check inventory
+        end
+
+        returnFromHomeBase(loc) -- Return from home base
+        return true -- Indicate block management was handled
+    end
+
+    return true -- Indicate supplies are sufficient or handled
 end
 
 
@@ -804,7 +833,7 @@ local torchNum = 9
 function placeTorch()
  checkAndSendStatus() -- Check and send status periodically
  turtle.select(3)
- if flex.isItem(name_torch) then
+ if flex.isItem(name_torch) and turtle.getItemCount(3) > 0 then
 
   if not turtle.place() then
    if not dig.fwd() then checkAndSendStatus(); return false end -- Added status check
@@ -813,19 +842,36 @@ function placeTorch()
    if not dig.back() then checkAndSendStatus(); return false end -- Added status check
 
    turtle.select(3)
-   if not dig.place() then
+   if not turtle.place() then
     if not dig.fwd() then checkAndSendStatus(); return false end -- Added status check
     turtle.select(2)
     dig.placeUp()
     if not dig.back() then checkAndSendStatus(); return false end -- Added status check
     turtle.select(3)
-    dig.place()
+    if not turtle.place() then checkAndSendStatus(); return false end -- Added status check
    end --if/else
   end --if
+ else
+     -- Torches are low or missing, manage supplies (which will handle getting them and pause if needed)
+     send_log_message("Torch count low or missing for placement, managing supplies...", colors.yellow)
+     if not manageSupplies() then return false end -- Manage supplies (includes getting torches)
+      -- After managing supplies, re-check torch count and attempt to select/place
+     if flex.isItem(name_torch, 3) and turtle.getItemCount(3) > 0 then -- Check slot 3 specifically
+         turtle.select(3)
+          if not turtle.place() then
+              -- Attempted to place after getting torches, still failed
+              send_log_message("Failed to place torch even after managing supplies.", colors.orange)
+              return false -- Indicate failure
+          end
+     else
+         send_log_message("Could not obtain torches to place after managing supplies.", colors.red)
+         return false -- Indicate failure
+     end
  end --if
 
  turtle.select(2)
  checkAndSendStatus() -- Check and send status periodically
+ return true -- Ensure placeTorch returns a boolean
 end --function
 
 
@@ -833,7 +879,7 @@ function stepDown()
  local x
 
  checkAndSendStatus() -- Check and send status periodically
- manageSupplies() -- Check and manage supplies before a step
+ if not manageSupplies() then return false end -- Check and manage supplies before a step
  turtle.select(2)
  dig.right()
  for x=1,height-2 do
@@ -856,7 +902,7 @@ function stepDown()
 
  if torchNum >= 3 then
   if not dig.back() then checkAndSendStatus(); return false end -- Added status check
-  placeTorch()
+  if not placeTorch() then checkAndSendStatus(); return false end -- Added status check and return check
   if not dig.down() then checkAndSendStatus(); return false end -- Added status check
   if not dig.fwd() then checkAndSendStatus(); return false end -- Added status check
   torchNum = 0
@@ -896,7 +942,7 @@ end --function
 
 local function turnRight()
  checkAndSendStatus() -- Check and send status periodically
- manageSupplies() -- Check and manage supplies before a turn
+ if not manageSupplies() then return false end -- Check and manage supplies before a turn
  turtle.select(2)
  dig.right()
  if not dig.up(height-2) then checkAndSendStatus(); return false end -- Added status check
@@ -965,7 +1011,7 @@ end --function
 
 function endcap(h,stop)
  checkAndSendStatus() -- Check and send status periodically
- manageSupplies() -- Check and manage supplies before endcap
+ if not manageSupplies() then return false end -- Check and manage supplies before endcap
  stop = ( stop ~= nil )
  h = h or 0 -- Height to dig layer
  local x
@@ -1032,12 +1078,12 @@ local direction
 
 function avoidBedrock()
  checkAndSendStatus() -- Check and send status periodically
- manageSupplies() -- Check and manage supplies before avoiding bedrock
+ if not manageSupplies() then return false end -- Check and manage supplies before avoiding bedrock
  if dig.isStuck() then
   -- Hit Bedrock/Void
   if dig.getStuckDir() == "fwd" then
-   dig.up()
-   dig.placeDown()
+   if not dig.up() then checkAndSendStatus(); return false end
+   if not dig.placeDown() then checkAndSendStatus(); return false end
    dig.checkBlocks()
    dig.setymin(dig.gety())
    if not dig.fwd() then checkAndSendStatus(); return false end -- Added status check
@@ -1048,24 +1094,25 @@ function avoidBedrock()
 
  -- Get X and Z on the inner stair block
  if dig.getx() >= dx+2 then
-  dig.gotox(dx+1)
+  if not dig.gotox(dx+1) then checkAndSendStatus(); return false end
 
  elseif dig.getx() <= -1 then
-  dig.gotox(0)
+   if not dig.gotox(0) then checkAndSendStatus(); return false end
 
  end --if/else
 
  if dig.getz() >= dz+1 then
-  dig.gotoz(dz)
+   if not dig.gotoz(dz) then checkAndSendStatus(); return false end
 
  elseif dig.getz() <= -2 then
-  dig.gotoz(-1)
+   if not dig.gotoz(-1) then checkAndSendStatus(); return false end
 
  end --if/else
 
- dig.gotor(direction)
- dig.gotoy(dig.getymin())
+ if not dig.gotor(direction) then checkAndSendStatus(); return false end
+ if not dig.gotoy(dig.getymin()) then checkAndSendStatus(); return false end
  checkAndSendStatus() -- Check and send status periodically
+ return true
 end --function
 
 
@@ -1083,64 +1130,70 @@ dig.setymin(dig.gety())
 
 sendStatus() -- Send initial status before starting
 
-while true do
+local digging_active = true
+while digging_active do
  -- **MODIFIED: Removed modem message event handling loop**
  -- The script will no longer listen for commands here.
  checkAndSendStatus() -- Check and send status periodically
- manageSupplies() -- Check and manage supplies at the start of the main loop iteration
+ if not manageSupplies() then digging_active = false; break end -- Check and manage supplies at the start of the main loop iteration
 
  for n=0,dz-1 do
-  if not stepDown() then break end
+  if not stepDown() then digging_active = false; break end
   x = x + 1
   if x >= dy then break end
   -- status checks are inside stepDown now
  end
- if dig.isStuck() or x >= dy then break end
- if not turnRight() then break end -- turnRight includes status checks and manageSupplies
+ if not digging_active or dig.isStuck() or x >= dy then break end
+ if not turnRight() then digging_active = false; break end -- turnRight includes status checks and manageSupplies
  x = x + 1
  -- status checks are inside turnRight now
 
 
  direction = dig.getr()
  for n=0,dx-1 do
-  if not stepDown() then break end
+  if not stepDown() then digging_active = false; break end
   x = x + 1
   if x >= dy then break end
    -- status checks are inside stepDown now
  end
- if dig.isStuck() or x >= dy then break end
- if not turnRight() then break end -- turnRight includes status checks and manageSupplies
+ if not digging_active or dig.isStuck() or x >= dy then break end
+ if not turnRight() then digging_active = false; break end -- turnRight includes status checks and manageSupplies
  x = x + 1
   -- status checks are inside turnRight now
 
  direction = dig.getr()
 end --while
 
+if digging_active then -- Only proceed with endcap if digging was not aborted
+ if not avoidBedrock() then digging_active = false end -- includes status checks and manageSupplies
+ if digging_active and not dig.fwd() then digging_active = false else if digging_active then avoidBedrock() end end -- dig.fwd includes status checks
+ if digging_active and not endcap(1) then digging_active = false else if digging_active then avoidBedrock() end end -- endcap includes status checks and manageSupplies
+ if digging_active and not dig.fwd() then digging_active = false else if digging_active then avoidBedrock() end end -- dig.fwd includes status checks
+ if digging_active and not endcap(1,true) then digging_active = false else if digging_active then avoidBedrock() end end -- endcap includes status checks and manageSupplies
 
-avoidBedrock() -- includes status checks and manageSupplies
-if not dig.fwd() then avoidBedrock() end -- dig.fwd includes status checks
-if not endcap(1) then avoidBedrock() end -- endcap includes status checks and manageSupplies
-if not dig.fwd() then avoidBedrock() end -- dig.fwd includes status checks
-if not endcap(1,true) then avoidBedrock() end -- endcap includes status checks and manageSupplies
-
-dig.left(2)
-while not turtle.detect() do
- if not dig.fwd() then break end -- dig.fwd includes status checks
- checkAndSendStatus() -- Check and send status periodically
+ if digging_active then
+  if not dig.left(2) then digging_active = false end
+  while digging_active and not turtle.detect() do
+   if not dig.fwd() then digging_active = false; break end -- dig.fwd includes status checks
+   checkAndSendStatus() -- Check and send status periodically
+  end
+  if digging_active and not dig.back() then digging_active = false end -- dig.back includes status checks
+ end
 end
-if not dig.back() then end -- dig.back includes status checks
 
 
 -- This bit compensates for random Bedrock (mostly)
-if #dig.getKnownBedrock() > 0 then
+if digging_active and #dig.getKnownBedrock() > 0 then
  -- Check and manage supplies before compensating for bedrock
- manageSupplies()
- for x=1,4 do
-  if not dig.placeDown() then checkAndSendStatus(); break end -- Added status check
-  if not dig.right() then checkAndSendStatus(); break end -- Added status check
-  if not dig.fwd() then checkAndSendStatus(); return false end -- Added status check
-  checkAndSendStatus() -- Check and send status periodically
- end --for
+ if not manageSupplies() then digging_active = false end
+ if digging_active then
+  for x=1,4 do
+   if not dig.placeDown() then digging_active = false; break end -- Added status check
+   if not dig.right() then digging_active = false; break end -- Added status check
+   if not dig.fwd() then digging_active = false; break end -- Added status check
+   checkAndSendStatus() -- Check and send status periodically
+  end --for
+ end
 end --for
 
 
@@ -1154,44 +1207,34 @@ end --for
 
 local function placeStairs()
  checkAndSendStatus() -- Check and send status periodically
- manageSupplies() -- Check and manage supplies before placing stairs
+ if not manageSupplies() then return false end -- Check and manage supplies before placing stairs
  local x,y,z,slot
  slot = turtle.getSelectedSlot()
- y = turtle.getItemCount()
- z = true
+ y = turtle.getItemCount(2) -- Check count in block slot
 
- if y < 2 or not flex.isItem("stairs") then
-  send_log_message("Low on stairs blocks, managing supplies...", colors.yellow)
-  -- Stairs blocks are not managed by manageSupplies (only fuel/torches/dumping)
-  -- You might need to add logic here to go to base and get more stair blocks if needed
-  -- For now, it will just report low and potentially stop if it can't place.
-
-  for x=1,16 do
-   turtle.select(x)
-   y = turtle.getItemCount()
-   if y >= 2 and flex.isItem("stairs") then
-    z = false
-    send_log_message("Found stairs blocks in inventory.", colors.lightBlue)
-    break
-   end --if
-  end --for
-
-  if z then
-   turtle.select(slot)
-   checkAndSendStatus() -- Added status check before returning false
-   send_log_message("Ran out of stairs blocks. Cannot continue.", colors.red)
-   return false -- Cannot place stairs
-  end --if
+ if y < 2 or not (flex.isItem(name_cobble, 2) or flex.isItem(name_stairs, 2)) then -- Check block slot (slot 2)
+  send_log_message("Low on stairs/blocks ("..tostring(y).."), managing supplies...", colors.yellow)
+  -- manageSupplies is already called, which handles getting blocks if needed and pausing
+  -- If manageSupplies returned false, the caller should handle it.
+  -- Here, just check if we have blocks after manageSupplies
+   if turtle.getItemCount(2) < 2 or not (flex.isItem(name_cobble, 2) or flex.isItem(name_stairs, 2)) then
+       send_log_message("Could not obtain enough stairs/blocks.", colors.red)
+       return false -- Cannot place stairs
+   end
  end --if
 
- dig.placeDown()
- dig.right()
- dig.fwd()
- dig.left()
- dig.placeDown()
- dig.left()
- dig.fwd()
- dig.right()
+ -- Ensure block slot (slot 2) is selected before placing
+ turtle.select(2)
+
+ if not dig.placeDown() then checkAndSendStatus(); return false end
+ if not dig.right() then checkAndSendStatus(); return false end
+ if not dig.fwd() then checkAndSendStatus(); return false end
+ if not dig.left() then checkAndSendStatus(); return false end
+ if not dig.placeDown() then checkAndSendStatus(); return false end
+ if not dig.left() then checkAndSendStatus(); return false end
+ if not dig.fwd() then checkAndSendStatus(); return false end
+ if not dig.right() then checkAndSendStatus(); return false end
+
  checkAndSendStatus() -- Check and send status periodically after placing stairs
  return true
 end --function
@@ -1201,94 +1244,108 @@ send_log_message("Returning to surface",
   colors.yellow)
 sendStatus() -- Send status after logging return to surface
 
-
+local ascending_active = true
 function isDone()
  -- Reached Surface
  return dig.gety() >= 0
 end
 
 -- Follow the Spiral [and place Stairs]
--- **ADDED: Variable to track if ascending is finished**
+-- **MODIFIED: Variable to track if ascending is finished**
 local ascending_done = false
-while not isDone() and not ascending_done do
+while not isDone() and not ascending_done and ascending_active do
  -- **MODIFIED: Removed modem message event handling loop**
  checkAndSendStatus() -- Check and send status periodically
- manageSupplies() -- Check and manage supplies at the start of the ascending loop iteration
+ if not manageSupplies() then ascending_active = false; break end -- Check and manage supplies at the start of the ascending loop iteration
 
  if dig.getr()%360 == 0 then
-  while dig.getz() < dig.getzmax()-1 do
-   if not dig.fwd() then ascending_done = true; break end -- dig.fwd includes status checks
-   if not dig.up() then ascending_done = true; break end -- dig.up includes status checks
-   if not placeStairs() then ascending_done = true; break end -- placeStairs includes status checks and manageSupplies
+  while ascending_active and dig.getz() < dig.getzmax()-1 do
+   if not dig.fwd() then ascending_active = false; break end -- dig.fwd includes status checks
+   if not dig.up() then ascending_active = false; break end -- dig.up includes status checks
+   if not placeStairs() then ascending_active = false; break end -- placeStairs includes status checks and manageSupplies
    if isDone() then break end
    checkAndSendStatus() -- Check and send status periodically
   end
 
  elseif dig.getr()%360 == 90 then
-  while dig.getx() < dig.getxmax()-1 do
-   if not dig.fwd() then ascending_done = true; break end -- dig.fwd includes status checks
-   if not dig.up() then ascending_done = true; break end -- dig.up includes status checks
-   if not placeStairs() then ascending_done = true; break end -- placeStairs includes status checks and manageSupplies
+  while ascending_active and dig.getx() < dig.getxmax()-1 do
+   if not dig.fwd() then ascending_active = false; break end -- dig.fwd includes status checks
+   if not dig.up() then ascending_active = false; break end -- dig.up includes status checks
+   if not placeStairs() then ascending_active = false; break end -- placeStairs includes status checks and manageSupplies
    if isDone() then break end
    checkAndSendStatus() -- Check and send status periodically
   end
 
  elseif dig.getr()%360 == 180 then
-  while dig.getz() > dig.getzmin()+1 do
-   if not dig.fwd() then ascending_done = true; break end -- dig.fwd includes status checks
-   if not dig.up() then ascending_done = true; break end -- dig.up includes status checks
-   if not placeStairs() then ascending_done = true; break end -- placeStairs includes status checks and manageSupplies
+  while ascending_active and dig.getz() > dig.getzmin()+1 do
+   if not dig.fwd() then ascending_active = false; break end -- dig.fwd includes status checks
+   if not dig.up() then ascending_active = false; break end -- dig.up includes status checks
+   if not placeStairs() then ascending_active = false; break end -- placeStairs includes status checks and manageSupplies
    if dig.gety() > -4 and dig.getz()
       == dig.getzmin()+1 then
     -- Up at the top
-    if not dig.fwd() then ascending_done = true; break end -- dig.fwd includes status checks
-    if not dig.up() then ascending_done = true; break end -- dig.up includes status checks
-    if not placeStairs() then ascending_done = true; break end -- placeStairs includes status checks and manageSupplies
+    if not dig.fwd() then ascending_active = false; break end -- dig.fwd includes status checks
+    if not dig.up() then ascending_active = false; break end -- dig.up includes status checks
+    if not placeStairs() then ascending_active = false; break end -- placeStairs includes status checks and manageSupplies
    end --if
    if isDone() then break end
    checkAndSendStatus() -- Check and send status periodically
   end
 
  elseif dig.getr()%360 == 270 then
-  while dig.getx() > dig.getxmin()+1 do
-   if not dig.fwd() then ascending_done = true; break end -- dig.fwd includes status checks
-   if not dig.up() then ascending_done = true; break end -- dig.up includes status checks
-   if not placeStairs() then ascending_done = true; break end -- placeStairs includes status checks and manageSupplies
+  while ascending_active and dig.getx() > dig.getxmin()+1 do
+   if not dig.fwd() then ascending_active = false; break end -- dig.fwd includes status checks
+   if not dig.up() then ascending_active = false; break end -- dig.up includes status checks
+   if not placeStairs() then ascending_active = false; break end -- placeStairs includes status checks and manageSupplies
    if isDone() then break end
    checkAndSendStatus() -- Check and send status periodically
   end
 
  end --if/else
 
- if not isDone() and not ascending_done then -- Only attempt to turn if not done or stuck during step
-     if not dig.left() then ascending_done = true; end -- dig.left includes status checks
+ if not isDone() and ascending_active then -- Only attempt to turn if not done or stuck during step
+     if not dig.left() then ascending_active = false; end -- dig.left includes status checks
  end
 
 end --while
 
 
 -- All Done!
--- Determine final status message based on whether ascending completed or got stuck
-if ascending_done then
-    send_log_message("Stairway ascent stopped.", colors.red)
+-- Determine final status message based on whether digging/ascending completed or got stuck
+if not digging_active or not ascending_active then
+    send_log_message("Stairway operation stopped due to an issue.", colors.red)
 else
     send_log_message("Stairway finished!", colors.lightBlue)
 end
+
 
 sendStatus() -- Send final status update
 
 -- Attempt to go to origin (0,0,0) and face South (180) after finishing/stopping
 -- We are already at the presumed home base location (0,0,0 facing South) if the script started there
 -- If it couldn't reach there or was already at base, this goto might be redundant but harmless
-if not dig.goto(home_base_coords.x, home_base_coords.y, home_base_coords.z, home_base_coords.r) then -- goto includes status checks
-    send_log_message("Could not reach origin ("..tostring(home_base_coords.x)..","..tostring(home_base_coords.y)..","..tostring(home_base_coords.z)..").", colors.orange)
-    -- Attempt to dump remaining inventory at current location if cannot reach base
-    send_log_message("Attempting to dump remaining inventory at current location.", colors.yellow)
-    dump() -- dump now handles going to home base or dropping (will drop if cannot reach base)
-else
-    -- Successfully reached origin/home base, manage any remaining inventory at base
-    send_log_message("Successfully returned to origin ("..tostring(home_base_coords.x)..","..tostring(home_base_coords.y)..","..tostring(home_base_coords.z).."). Managing final inventory.", colors.lightBlue)
-    -- Manage any remaining inventory at the home base
+-- Adding a direct check after the final goto as well, in case the workaround is needed at the very end
+local final_goto_success = dig.goto(home_base_coords.x, home_base_coords.y, home_base_coords.z, home_base_coords.r)
+if not final_goto_success then
+    -- **WORKAROUND CHECK AT END:** Check if the turtle is actually AT the home base coords/rotation
+    if dig.getx() == home_base_coords.x and
+       dig.gety() == home_base_coords.y and
+       dig.getz() == home_base_coords.z and
+       dig.getr() % 360 == home_base_coords.r then -- Use modulo for rotation comparison
+       send_log_message("Confirmed final position at origin despite goto failure.", colors.lightBlue)
+       -- Treat as success and proceed with final dump
+       final_goto_success = true
+    else
+        send_log_message("Could not reach origin ("..tostring(home_base_coords.x)..","..tostring(home_base_coords.y)..","..tostring(home_base_coords.z)..") after completing tasks.", colors.orange)
+        -- Attempt to dump remaining inventory at current location if cannot reach base
+        send_log_message("Attempting to dump remaining inventory at current location.", colors.yellow)
+        dump() -- dump now handles going to home base or dropping (will drop if cannot reach base)
+    end
+end
+
+if final_goto_success then
+    -- Successfully reached origin/home base (or confirmed position), manage any remaining inventory at base
+    send_log_message("Managing final inventory at origin.", colors.lightBlue)
     -- We are already at home base (0,0,0, facing South)
     local original_selected_slot = turtle.getSelectedSlot()
     local chest = peripheral.wrap(home_chest_side)
