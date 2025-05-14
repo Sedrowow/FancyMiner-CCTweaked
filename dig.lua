@@ -704,304 +704,108 @@ local protect = "Cannot break protected block"
 
 function up(n)
   n = n or 1
-  if n < 0 then
-  return down(-n)
-  end --if
+  if n < 0 then return down(-n) end
 
   local x,a,b,t
-
   for x=1, n do
-  refuel()
-
-  -- **MODIFIED: Increment dugtotal and blocks_processed_total on successful move (dig or empty)**
-  if turtle.up() then
-      update("up")
-      dugtotal = dugtotal + 1 -- Count successful move as dug/processed
-      addBlocksProcessed(1) -- Count successful move as processed
-  else
-
-    if doblacklist then
-    -- Blocks not to mine
-    if flex.isBlockUp(options["blacklist"]) then
-      if not back() then return false end
-      if not up() then return false end
-      return true
-    end --if
-    end --if
-
-    t = os.time()
-    stuck = false
-    -- Note: turtle.digUp() also attempts to pick up the item if inventory space is available.
-    while not turtle.up() do
-    a,b = turtle.digUp()
-    while a do
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
-      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
-      -- Item pickup is handled by turtle.digUp() if successful and space is available.
-      a,b = turtle.digUp()
-    end --while
-
-    if b == protect then
-      if doblacklist then
-      options["blacklist"][
-          #options["blacklist"]+1]
-          = flex.getBlockUp()
-      return up(n-x+1)
+    refuel()
+    
+    if turtle.detectUp() then
+      -- If there's a block above, we need to dig it
+      while not turtle.up() do
+        a,b = turtle.digUp()
+        if a then
+          dugtotal = dugtotal + 1 -- Count successful dig
+          addBlocksProcessed(1)
+        end
+        if b then break end
+        if attack then turtle.attackUp() end
+      end
+      -- Count the movement itself as processed
+      addBlocksProcessed(1)
+    else
+      -- No block above, just move
+      if turtle.up() then
+        addBlocksProcessed(1)
       else
-      b = unbreak
-      end --if
-    end --if
-
-    if b == unbreak then
-      flex.send("#1"..b.."#0: {#8"..
-        tostring(getx()).."#0,#8"..
-        tostring(gety()+1).."#0,#8"..
-        tostring(getz()).."#0}")
-      knownBedrock[#knownBedrock+1] = {
-        getx(), gety()+1, getz() }
-      stuck = true
-      stuckDir = "up"
-      return false
-    end --if
-    if a then
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
-      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
-    end --if
-    if attack then turtle.attackUp() end
-
-    if (os.time()-t)/24*20*60 > 20 then
-      -- Stuck for at least 20 seconds
-      -- Usually caused by height limits
-      flex.send("Unable to move up",colors.orange)
-      stuck = true
-      stuckDir = "up"
-      return false
-    end --if
-
-    end --while
-
-  end --if can't move
-
-  -- Removed addBlocksProcessed(1) here, handled above in the successful move check
-  end --for
-
+        return false
+      end
+    end
+    
+    update("up")
+  end
   return true
-end --function
-
-
+end
 
 function down(n)
   n = n or 1
-  if n < 0 then
-  return up(-n)
-  end --if
+  if n < 0 then return up(-n) end
 
   local x,a,b,t
-
   for x=1, n do
-  refuel()
-
-  -- **MODIFIED: Increment dugtotal and blocks_processed_total on successful move (dig or empty)**
-  if turtle.down() then
-      update("down")
-      dugtotal = dugtotal + 1 -- Count successful move as dug/processed
-      addBlocksProcessed(1) -- Count successful move as processed
-  else
-
-    if doblacklist then
-    -- Blocks not to mine
-    if flex.isBlockDown(options["blacklist"]) then
-      if not fwd() then return false end
-      if not down() then return false end
-      return true
-    end --if
-    end --if
-
-    t = os.time()
-    stuck = false
-    -- Note: turtle.digDown() also attempts to pick up the item if inventory space is available.
-    while not turtle.down() do
-    a,b = turtle.digDown()
-    while a do
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
-      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
-      -- Item pickup is handled by turtle.digDown() if successful and space is available.
-      a,b = turtle.digDown()
-    end --while
-
-    if b == protect then
-      if doblacklist then
-      options["blacklist"][
-        #options["blacklist"]+1 ]
-        = flex.getBlockDown()
-      return down(n-x+1)
+    refuel()
+    
+    if turtle.detectDown() then
+      -- If there's a block below, we need to dig it
+      while not turtle.down() do
+        a,b = turtle.digDown()
+        if a then
+          dugtotal = dugtotal + 1 -- Count successful dig
+          addBlocksProcessed(1)
+        end
+        if b then break end
+        if attack then turtle.attackDown() end
+      end
+      -- Count the movement itself as processed
+      addBlocksProcessed(1)
+    else
+      -- No block below, just move
+      if turtle.down() then
+        addBlocksProcessed(1)
       else
-      b = unbreak
-      end --if
-    end --if
-
-    if b == unbreak then
-      flex.send("#1"..b.."#0: {#8"..
-        tostring(getx()).."#0,#8"..
-        tostring(gety()-1).."#0,#8"..
-        tostring(getz()).."#0}")
-      knownBedrock[#knownBedrock+1] = {
-        getx(), gety()-1, getz() }
-      stuck = true
-      stuckDir = "down"
-      return false
-    end --if
-    if a then
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
-      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
-    end --if
-    if attack then turtle.attackDown() end
-
-    if (os.time()-t)/24*20*60 > 20 then
-      -- Stuck for at least 20 seconds
-      -- Usually caused by height limits
-      flex.send("Unable to move down",colors.orange)
-      stuck = true
-      stuckDir = "down"
-      return false
-    end --if
-
-    end --while
-
-  end --if can't move
-
-  -- Removed addBlocksProcessed(1) here, handled above in the successful move check
-  end --for
-
+        return false
+      end
+    end
+    
+    update("down")
+  end
   return true
-end --function
-
-
+end
 
 function fwd(n)
   n = n or 1
-  if n < 0 then
-  return back(-n)
-  end --if
+  if n < 0 then return back(-n) end
 
-  local x,z,a,b,t
+  local x,a,b,t
   for x=1, n do
-  refuel()
-
-  -- **MODIFIED: Increment dugtotal and blocks_processed_total on successful move (dig or empty)**
-  if turtle.forward() then
-      update("fwd")
-      dugtotal = dugtotal + 1 -- Count successful move as dug/processed
-      addBlocksProcessed(1) -- Count successful move as processed
-  else
-
-    if doblacklist then
-    -- Blocks not to mine
-    if flex.isBlock(options["blacklist"]) then
-      if flex.isBlockUp(options["blacklist"]) then
-      if flex.isBlockDown(options["blacklist"]) then
-
-        -- Blocks above, below and in front
-        if not back() then return false end
-        if not up(2) then return false end
-        if not fwd(2) then return false end
-        if not down(2) then return false end
-        return true
-
-      else -- Blocks in front and above
-        if not down() then return false end
-        x = 0
-        while flex.isBlock(options["blacklist"]) do
-        x = x + 1
-        if not down() then return false end
-        end --while
-        if not fwd(2) then return false end
-        if not up(x) then return false end
-        return
-      end --if/else
-
+    refuel()
+    
+    if turtle.detect() then
+      -- If there's a block in front, we need to dig it
+      while not turtle.forward() do
+        a,b = turtle.dig()
+        if a then
+          dugtotal = dugtotal + 1 -- Count successful dig
+          addBlocksProcessed(1)
+        end
+        if b then break end
+        if attack then turtle.attack() end
+      end
+      -- Count the movement itself as processed
+      addBlocksProcessed(1)
+    else
+      -- No block in front, just move
+      if turtle.forward() then
+        addBlocksProcessed(1)
       else
-      -- Block in front
-      if not up() then return false end
-      if not fwd(2) then return false end
-      if not down() then return false end
-      return true
-      end --if/else
-    end --if
-    end --if doblacklist
-
-    t = os.time()
-    stuck = false
-    -- Note: turtle.dig() also attempts to pick up the item if inventory space is available.
-    while not turtle.forward() do
-    a,b = turtle.dig()
-    while a do
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
-      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
-      -- Item pickup is handled by turtle.dig() if successful and space is available.
-      a,b = turtle.dig()
-    end --while
-
-    if b == protect then
-      if doblacklist then
-      options["blacklist"][
-          #options["blacklist"]+1]
-          = flex.getBlock()
-      return fwd(n-x+1)
-      else
-      b = unbreak
-      end --if
-    end --if
-
-    if b == unbreak then
-      z = { getx(), gety(),
-           getz(), getr()%360 }
-
-      if z[4] == 0 then
-      z[3] = z[3] + 1
-      elseif z[4] == 90 then
-      z[1] = z[1] + 1
-      elseif z[4] == 180 then
-      z[3] = z[3] - 1
-      elseif z[4] == 270 then
-      z[1] = z[1] - 1
-      end --if/else
-
-      flex.send("#1"..b.."#0: {#8"..
-        tostring(z[1]).."#0,#8"..
-        tostring(z[2]).."#0,#8"..
-        tostring(z[3]).."#0}")
-      knownBedrock[#knownBedrock+1] =
-        { z[1], z[2], z[3] }
-      stuck = true
-      stuckDir = "fwd"
-      return false
-    end --if
-
-    if a then
-      -- dugtotal = dugtotal + 1 -- Removed here, handled by successful move below
-      -- addBlocksProcessed(1) -- Removed here, handled by successful move below
-    end --if
-    if attack then turtle.attack() end
-
-    --if (os.time()-t)/24*20*60 > 120 then
-      -- Stuck for at least 20 seconds
-      --flex.send("Unable to move forward",colors.orange)
-      --stuck = true
-      --stuckDir = "fwd"
-      --return false
-      --t = os.time()
-    --end --if
-
-    end --while not turtle.forward()
-
-  end --if can't move
-
-  -- Removed addBlocksProcessed(1) here, handled above in the successful move check
-  end --if
-
+        return false
+      end
+    end
+    
+    update("fwd")
+  end
   return true
-end --function
+end
 
 
 
@@ -1034,51 +838,37 @@ end --function
 
 
 function dig(x)
-  local a,b,success
+  local success = false
   x = x or "fwd"
-  success = false -- Track if we actually dug something
-
-  if x=="fwd" then
-    -- First check if there's actually a block to dig
+  
+  if x == "fwd" then
     if turtle.detect() then
       while turtle.dig() do
-        success = true -- We successfully dug at least one block
-        -- Item pickup is handled by turtle.dig() if successful and space is available
+        dugtotal = dugtotal + 1
+        addBlocksProcessed(1)
+        success = true
       end
     end
-    if success then
-      dugtotal = dugtotal + 1 -- Increment only if we actually dug something
-      addBlocksProcessed(1) -- Count this location as processed
-    end
-
-  elseif x=="up" then
+  elseif x == "up" then
     if turtle.detectUp() then
       while turtle.digUp() do
+        dugtotal = dugtotal + 1
+        addBlocksProcessed(1)
         success = true
-        -- Item pickup is handled by turtle.digUp() if successful and space is available
       end
     end
-    if success then
-      dugtotal = dugtotal + 1
-      addBlocksProcessed(1)
-    end
-
-  elseif x=="down" then
+  elseif x == "down" then
     if turtle.detectDown() then
       while turtle.digDown() do
+        dugtotal = dugtotal + 1
+        addBlocksProcessed(1)
         success = true
-        -- Item pickup is handled by turtle.digDown() if successful and space is available
       end
     end
-    if success then
-      dugtotal = dugtotal + 1
-      addBlocksProcessed(1)
-    end
-
-  end --if/else
-
-  return success -- Return whether we actually dug something
-end --function
+  end
+  
+  return success
+end
 
 function digUp() dig("up") end
 function digDown() dig("down") end
@@ -1242,15 +1032,20 @@ end --function
 
 function gotoy(y)
   if y == nil then
-  error("Number expected, got nil", 2)
-  return
-  end --if
-
+    error("Number expected, got nil", 2)
+    return
+  end
+  
+  -- Add skip depth validation
+  if type(skip) == "number" and y > -skip then
+    y = -skip -- Don't go above skip depth
+  end
+  
   while ydist < y do
-  if not up() then return false end
+    if not up() then return false end
   end
   while ydist > y do
-  if not down() then return false end
+    if not down() then return false end
   end
   return true
 end

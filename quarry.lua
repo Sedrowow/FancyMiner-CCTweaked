@@ -769,29 +769,35 @@ local function validatePosition()
     return true
 end
 
--- Replace the validatePosition function with this improved version
+-- Replace the validatePosition function with this Y-aware version
 local function validatePosition()
     -- Get current position
     local current_x = dig.getx()
+    local current_y = dig.gety()
     local current_z = dig.getz()
     
     -- Add position debugging
-    print(string.format("DEBUG: Current position - X=%d, Z=%d (bounds: 0 to X=%d, Z=%d)", 
-        current_x, current_z, xmax-1, zmax-1))
+    print(string.format("DEBUG: Current position - X=%d, Y=%d, Z=%d (bounds: 0 to X=%d, Y to %d, Z=%d)", 
+        current_x, current_y, current_z, xmax-1, ymin, zmax-1))
     
     -- Check if we're out of bounds
-    if current_x >= xmax or current_x < 0 or current_z >= zmax or current_z < 0 then
-        flex.send(string.format("Position out of bounds! X=%d, Z=%d", current_x, current_z), colors.red)
+    -- Note: Y coordinate can go negative for digging down, but shouldn't go below ymin
+    if current_x >= xmax or current_x < 0 or 
+       current_z >= zmax or current_z < 0 or 
+       current_y < ymin then -- Only check lower Y bound
+        flex.send(string.format("Position out of bounds! X=%d, Y=%d, Z=%d", current_x, current_y, current_z), colors.red)
         
         -- Store original position for logging
         local orig_x = current_x
+        local orig_y = current_y
         local orig_z = current_z
         
         -- Calculate closest valid position
         local target_x = math.min(math.max(current_x, 0), xmax-1)
+        local target_y = math.max(current_y, ymin) -- Only enforce minimum Y
         local target_z = math.min(math.max(current_z, 0), zmax-1)
         
-        flex.send(string.format("Attempting to recover to X=%d, Z=%d", target_x, target_z), colors.yellow)
+        flex.send(string.format("Attempting to recover to X=%d, Y=%d, Z=%d", target_x, target_y, target_z), colors.yellow)
         
         -- First try to correct X position
         if current_x ~= target_x then
@@ -811,10 +817,19 @@ local function validatePosition()
             end
         end
         
+        -- Finally correct Y if we're too deep
+        if current_y < target_y then
+            dig.gotoy(target_y)
+            if dig.gety() ~= target_y then
+                flex.send("Failed to correct Y position!", colors.red)
+                return false
+            end
+        end
+        
         -- Verify the recovery was successful
-        if dig.getx() == target_x and dig.getz() == target_z then
-            flex.send(string.format("Successfully recovered from (%d,%d) to (%d,%d)", 
-                orig_x, orig_z, target_x, target_z), colors.green)
+        if dig.getx() == target_x and dig.getz() == target_z and dig.gety() >= target_y then
+            flex.send(string.format("Successfully recovered from (%d,%d,%d) to (%d,%d,%d)", 
+                orig_x, orig_y, orig_z, target_x, target_y, target_z), colors.green)
             return true
         else
             flex.send("Position recovery failed!", colors.red)
@@ -858,12 +873,13 @@ local function recoverPosition()
     return true
 end
 
--- Modify the main mining loop section to include better recovery
+-- Replace the main mining loop with this corrected version
 while not done and not dig.isStuck() do
     validateState()
     turtle.select(1)
     
-    for step = 1, inner_loop_dimension-1 do
+    -- Changed loop condition to ensure we process all blocks from 0 to zmax-1 (inclusive)
+    for step = 0, zmax-1 do  -- Changed to start at 0 and go to zmax-1
         checkAll(0)
         
         -- Set rotation based on current Z direction
@@ -875,29 +891,33 @@ while not done and not dig.isStuck() do
         
         saveCurrentState()
         
-        -- Validate position before moving
-        if not validatePosition() then
-            flex.send("Position validation failed, attempting recovery...", colors.yellow)
-            if not recoverPosition() then
-                flex.send("Recovery failed, stopping quarry", colors.red)
-                done = true
-                break
+        -- Only move forward if we haven't processed the last block in this row
+        -- Note: We're already at the block we want to process, so check if we should move to the next one
+        if step < zmax-1 then  -- Only move forward if we're not at the last block
+            -- Validate position before moving
+            if not validatePosition() then
+                flex.send("Position validation failed, attempting recovery...", colors.yellow)
+                if not recoverPosition() then
+                    flex.send("Recovery failed, stopping quarry", colors.red)
+                    done = true
+                    break
+                end
             end
-        end
-        
-        -- Move forward with validation
-        if not dig.fwd() then
-            if not recoverPosition() then
-                done = true
-                break
+            
+            -- Move forward with validation
+            if not dig.fwd() then
+                if not recoverPosition() then
+                    done = true
+                    break
+                end
             end
-        end
-        
-        -- Validate position after movement
-        if not validatePosition() then
-            if not recoverPosition() then
-                done = true
-                break
+            
+            -- Validate position after movement
+            if not validatePosition() then
+                if not recoverPosition() then
+                    done = true
+                    break
+                end
             end
         end
     end
@@ -910,18 +930,19 @@ while not done and not dig.isStuck() do
     
     validateState()
     
-    -- Move to the next row along the X axis with position validation
-    -- Changed to use proper boundary check
-    if dig.getx() <= 0 and xdir == -1 then
+    -- Handle row transition
+    local current_x = dig.getx()
+    
+    -- Check if we need to start a new layer
+    if (current_x <= 0 and xdir == -1) or (current_x >= xmax-1 and xdir == 1) then
         newlayer = true
-    elseif dig.getx() >= xmax and xdir == 1 then
-        newlayer = true
+        flex.send("Starting new layer...", colors.yellow)
     else
         checkAll(0)
         saveCurrentState()
-        local target_x = dig.getx() + xdir
+        local target_x = current_x + xdir
         -- Validate target position before moving
-        if target_x >= 0 and target_x <= xmax then
+        if target_x >= 0 and target_x < xmax then  -- Changed condition to use < xmax
             dig.gotox(target_x)
         else
             flex.send("X position would be out of bounds, starting new layer", colors.yellow)
