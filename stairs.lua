@@ -552,6 +552,19 @@ local function setTool()
   return false
  end --if
 
+ -- Add a delay to allow peripheral system to recognize the newly equipped crafting table
+ os.sleep(0.5)
+
+ -- Check if the peripheral is actually available after equipping
+ local craftingBench = peripheral.wrap(tool_side)
+ if not craftingBench then
+   flex.send("Failed to detect crafting bench peripheral",
+     colors.red)
+   success = false
+   sendStatus(false, "Crafting bench peripheral not found!")
+   return false
+ end
+
  if turtle.getItemCount() > 0 then
   oldTool = turtle.getItemDetail()["name"]
  end --if
@@ -724,16 +737,26 @@ if craftNum > 0 and chest > 0 and
  end --for
 
  -- Main Event! Craft Function! =D
- local cb = peripheral.wrap("left") or
-            peripheral.wrap("right")
- if cb.craft(craftNum) then
-  flex.send("Stairs crafted",colors.lightBlue)
-  sendStatus(true, "Stairs crafted.")
+ -- Add proper peripheral checks and error handling
+ local cb = peripheral.wrap(tool_side)
+ if not cb then
+   flex.send("Crafting bench peripheral not found",colors.red)
+   success = false
+   sendStatus(false, "Crafting bench peripheral not found!")
  else
-  flex.send("Crafting error",colors.red)
-  success = false
-  sendStatus(false, "Crafting error.")
- end --if
+   local crafted = pcall(function()
+     return cb.craft(craftNum)
+   end)
+   
+   if crafted then
+     flex.send("Stairs crafted",colors.lightBlue)
+     sendStatus(true, "Stairs crafted.")
+   else
+     flex.send("Crafting error",colors.red)
+     success = false
+     sendStatus(false, "Crafting error.")
+   end
+ end
 
  -- Restore inventory in correct order
  for x=1,16 do

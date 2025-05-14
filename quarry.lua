@@ -572,11 +572,16 @@ local xdir, zdir = 1, 1
 
 turtle.select(1)
 if reloaded then
-
  flex.send("Resuming "..tostring(zmax).."x"
    ..tostring(xmax).." quarry",colors.yellow)
 
+ local resume_x = dig.getx()
+ local resume_y = dig.gety()
+ local resume_z = dig.getz()
+ local resume_r = dig.getr()
+
  if dig.gety()==dig.getymin() and dig.gety()~=0 then
+  -- We're at the mining level
   zdir = dig.getzlast()
   if zdir == 0 then zdir = 1 end
   xdir = dig.getxlast()
@@ -590,13 +595,36 @@ if reloaded then
   end --if
 
  else
+  -- We need to return to our last position
+  flex.send("Returning to last position...", colors.yellow)
   gotoBase()
   if dodumps then dig.doDumpDown() end
   dig.dropNotFuel()
+  
+  -- Return to saved mining position
   dig.gotor(0)
   checkFuel()
-  -- skip is used here
-  dig.gotoy(math.min(dig.getymin() or 0,-skip)) -- Corrected: go to min y or skip depth, handle nil
+  -- First go to the correct Y level
+  dig.gotoy(math.min(resume_y,-skip))
+  checkFuel()
+  -- Then move to correct X/Z position
+  dig.gotoz(resume_z)
+  checkFuel()
+  dig.gotox(resume_x)
+  checkFuel()
+  -- Finally restore the correct rotation
+  dig.gotor(resume_r)
+  checkFuel()
+  
+  -- Update state tracking variables
+  xdir = dig.getxlast()
+  if xdir == 0 then xdir = 1 end
+  zdir = dig.getzlast()
+  if zdir == 0 then zdir = 1 end
+  
+  flex.send("Resumed at position: X=" .. resume_x .. 
+            ", Y=" .. resume_y .. 
+            ", Z=" .. resume_z, colors.yellow)
  end --if
 
 else
@@ -710,14 +738,43 @@ local function saveCurrentState()
     end
 end
 
--- Modify the main mining loop to include state validation
-while not done and not dig.isStuck() do
-    -- Validate state before each major operation
-    validateState()
+-- Add near the state validation function
+local function validatePosition()
+    -- Get current position
+    local current_x = dig.getx()
+    local current_z = dig.getz()
     
+    -- Check if we're out of bounds and log the issue
+    if current_x >= xmax or current_x < 0 or current_z >= zmax or current_z < 0 then
+        flex.send(string.format("Position out of bounds! X=%d, Z=%d (max: X=%d, Z=%d)", 
+            current_x, current_z, xmax-1, zmax-1), colors.red)
+        return false
+    end
+    return true
+end
+
+-- Modify the validatePosition function to use proper bounds
+local function validatePosition()
+    -- Get current position
+    local current_x = dig.getx()
+    local current_z = dig.getz()
+    
+    -- Check if we're out of bounds and log the issue
+    -- Changed bounds checking to be inclusive of the max values
+    if current_x > xmax or current_x < 0 or current_z > zmax or current_z < 0 then
+        flex.send(string.format("Position out of bounds! X=%d, Z=%d (max: X=%d, Z=%d)", 
+            current_x, current_z, xmax, zmax), colors.red)
+        return false
+    end
+    return true
+end
+
+-- Modify the main mining loop to use correct dimensions
+while not done and not dig.isStuck() do
+    validateState()
     turtle.select(1)
     
-    -- **MODIFIED: Inner loop to traverse exactly `inner_loop_dimension` steps**
+    -- Changed loop to ensure we mine the full dimension
     for step = 1, inner_loop_dimension do
         checkAll(0)
         
@@ -728,23 +785,26 @@ while not done and not dig.isStuck() do
             dig.gotor(180) -- Face South (-Z)
         end
         
-        -- Save state before movement
         saveCurrentState()
         
-        -- Move forward with validation
-        if not dig.fwd() then
-            flex.send("Forward movement failed, attempting recovery...", colors.yellow)
-            validateState()
+        -- Only move forward if we haven't reached the boundary
+        local next_z = dig.getz() + (zdir == 1 and 1 or -1)
+        if next_z >= 0 and next_z <= zmax then
             if not dig.fwd() then
-                done = true
-                break
+                flex.send("Forward movement failed, attempting recovery...", colors.yellow)
+                validateState()
+                if not dig.fwd() then
+                    done = true
+                    break
+                end
             end
+        else
+            -- We've reached the Z boundary
+            break
         end
         
         -- Validate position after movement
-        validateState()
-        
-        if dig.isStuck() then
+        if not validatePosition() then
             done = true
             break
         end
@@ -756,19 +816,25 @@ while not done and not dig.isStuck() do
     zdir = -zdir
     newlayer = false
     
-    -- Validate state before edge handling
     validateState()
     
-    -- Move to the next row along the X axis
+    -- Move to the next row along the X axis with position validation
+    -- Changed to use proper boundary check
     if dig.getx() <= 0 and xdir == -1 then
         newlayer = true
-    elseif dig.getx() >= outer_loop_dimension-1 and xdir == 1 then
+    elseif dig.getx() >= xmax and xdir == 1 then
         newlayer = true
     else
         checkAll(0)
-        -- Save state before X movement
         saveCurrentState()
-        dig.gotox(dig.getx() + xdir)
+        local target_x = dig.getx() + xdir
+        -- Validate target position before moving
+        if target_x >= 0 and target_x <= xmax then
+            dig.gotox(target_x)
+        else
+            flex.send("X position would be out of bounds, starting new layer", colors.yellow)
+            newlayer = true
+        end
     end
     
     -- Handle layer transition
