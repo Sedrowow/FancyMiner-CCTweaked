@@ -124,13 +124,13 @@ if #p > 0 then
     modem.open(modem_channel)
 end
 
-local last_status_sent_time = os.epoch("utc") or 0
-local status_send_interval = 10 * 1000 -- Send status every 10 seconds (in milliseconds)
+local last_status_sent_time = os.epoch("local") or 0
+local status_send_interval = 4 * 1000 -- Send status every 10 seconds (in milliseconds)
 
 local function sendStatus(is_mining, estimated_time_display)
     if not hasModem then return end
 
-    local current_epoch_time_ms = os.epoch("utc") or 0
+    local current_epoch_time_ms = os.epoch("local") or 0
     if current_epoch_time_ms - last_status_sent_time >= status_send_interval then
         local status_message = {
             type = "status_update",

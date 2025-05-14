@@ -47,8 +47,13 @@ if setupType == "1" then
     if allDownloaded then
         -- Label the turtle if it is one
         if turtle then
-            shell.run("label set FancyMiner")
-            print("Turtle labeled 'FancyMiner'.")
+            print("what should the turtle be called?")
+            askname = io.read()
+            if askname == "" then
+                print("No name provided. CAlling it 'FAncyMiner")
+                askname = "FancyMiner"
+            shell.run("label set" .. " " .. askname)
+            print("Turtle labeled: '" .. askname .. "'.")
         else
             print("Not a turtle. Skipping labeling.")
         end
