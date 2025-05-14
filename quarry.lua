@@ -769,47 +769,139 @@ local function validatePosition()
     return true
 end
 
--- Modify the main mining loop to use correct dimensions
+-- Replace the validatePosition function with this improved version
+local function validatePosition()
+    -- Get current position
+    local current_x = dig.getx()
+    local current_z = dig.getz()
+    
+    -- Add position debugging
+    print(string.format("DEBUG: Current position - X=%d, Z=%d (bounds: 0 to X=%d, Z=%d)", 
+        current_x, current_z, xmax-1, zmax-1))
+    
+    -- Check if we're out of bounds
+    if current_x >= xmax or current_x < 0 or current_z >= zmax or current_z < 0 then
+        flex.send(string.format("Position out of bounds! X=%d, Z=%d", current_x, current_z), colors.red)
+        
+        -- Store original position for logging
+        local orig_x = current_x
+        local orig_z = current_z
+        
+        -- Calculate closest valid position
+        local target_x = math.min(math.max(current_x, 0), xmax-1)
+        local target_z = math.min(math.max(current_z, 0), zmax-1)
+        
+        flex.send(string.format("Attempting to recover to X=%d, Z=%d", target_x, target_z), colors.yellow)
+        
+        -- First try to correct X position
+        if current_x ~= target_x then
+            dig.gotox(target_x)
+            if dig.getx() ~= target_x then
+                flex.send("Failed to correct X position!", colors.red)
+                return false
+            end
+        end
+        
+        -- Then try to correct Z position
+        if current_z ~= target_z then
+            dig.gotoz(target_z)
+            if dig.getz() ~= target_z then
+                flex.send("Failed to correct Z position!", colors.red)
+                return false
+            end
+        end
+        
+        -- Verify the recovery was successful
+        if dig.getx() == target_x and dig.getz() == target_z then
+            flex.send(string.format("Successfully recovered from (%d,%d) to (%d,%d)", 
+                orig_x, orig_z, target_x, target_z), colors.green)
+            return true
+        else
+            flex.send("Position recovery failed!", colors.red)
+            return false
+        end
+    end
+    return true
+end
+
+-- Add this new function to handle complete position recovery
+local function recoverPosition()
+    -- Get current layer information
+    local current_y = dig.gety()
+    local current_x = dig.getx()
+    local current_z = dig.getz()
+    
+    flex.send("Attempting full position recovery...", colors.yellow)
+    
+    -- First, try to return to a known good X position
+    local target_x = math.min(math.max(0, current_x), xmax-1)
+    if not dig.gotox(target_x) then
+        flex.send("Failed to recover X position", colors.red)
+        return false
+    end
+    
+    -- Then correct Z position
+    local target_z = math.min(math.max(0, current_z), zmax-1)
+    if not dig.gotoz(target_z) then
+        flex.send("Failed to recover Z position", colors.red)
+        return false
+    end
+    
+    -- Adjust rotation based on current position
+    if zdir == 1 then
+        dig.gotor(0)
+    else
+        dig.gotor(180)
+    end
+    
+    flex.send(string.format("Recovered to position X=%d, Z=%d", dig.getx(), dig.getz()), colors.green)
+    return true
+end
+
+-- Modify the main mining loop section to include better recovery
 while not done and not dig.isStuck() do
     validateState()
     turtle.select(1)
     
-    -- Changed loop to ensure we mine the full dimension
-    for step = 1, inner_loop_dimension do
+    for step = 1, inner_loop_dimension-1 do
         checkAll(0)
         
-        -- Set rotation based on current Z direction (zdir)
+        -- Set rotation based on current Z direction
         if zdir == 1 then 
-            dig.gotor(0) -- Face North (+Z)
+            dig.gotor(0)
         elseif zdir == -1 then 
-            dig.gotor(180) -- Face South (-Z)
+            dig.gotor(180)
         end
         
         saveCurrentState()
         
-        -- Only move forward if we haven't reached the boundary
-        local next_z = dig.getz() + (zdir == 1 and 1 or -1)
-        if next_z >= 0 and next_z <= zmax then
-            if not dig.fwd() then
-                flex.send("Forward movement failed, attempting recovery...", colors.yellow)
-                validateState()
-                if not dig.fwd() then
-                    done = true
-                    break
-                end
+        -- Validate position before moving
+        if not validatePosition() then
+            flex.send("Position validation failed, attempting recovery...", colors.yellow)
+            if not recoverPosition() then
+                flex.send("Recovery failed, stopping quarry", colors.red)
+                done = true
+                break
             end
-        else
-            -- We've reached the Z boundary
-            break
+        end
+        
+        -- Move forward with validation
+        if not dig.fwd() then
+            if not recoverPosition() then
+                done = true
+                break
+            end
         end
         
         -- Validate position after movement
         if not validatePosition() then
-            done = true
-            break
+            if not recoverPosition() then
+                done = true
+                break
+            end
         end
     end
-    
+
     if done then break end
     
     -- After traversing a row, change Z direction and move to next row along X

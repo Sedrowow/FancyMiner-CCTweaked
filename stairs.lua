@@ -821,7 +821,7 @@ flex.send("Returning to surface",
 sendStatus(true, "Returning to surface.")
 
 function isDone()
- -- Reached Surface
+ -- Reached Surface or slightly above (to prevent overshooting)
  return dig.gety() >= 0
 end
 
@@ -830,63 +830,67 @@ while not isDone() do
     sendStatus(true, "Ascending...")
 
  if dig.getr()%360 == 0 then
-  while dig.getz() < dig.getzmax()-1 do
+  while dig.getz() < dig.getzmax()-1 and not isDone() do -- Added isDone() check
    dig.fwd()
    dig.up()
    placeStairs()
-   if isDone() then break end
   end --while
 
  elseif dig.getr()%360 == 90 then
-  while dig.getx() < dig.getxmax()-1 do
+  while dig.getx() < dig.getxmax()-1 and not isDone() do -- Added isDone() check
    dig.fwd()
    dig.up()
    placeStairs()
-   if isDone() then break end
   end --while
 
  elseif dig.getr()%360 == 180 then
-  while dig.getz() > dig.getzmin()+1 do
+  while dig.getz() > dig.getzmin()+1 and not isDone() do -- Added isDone() check
    dig.fwd()
    dig.up()
    placeStairs()
-   if dig.gety() > -4 and dig.getz()
-      == dig.getzmin()+1 then
+   if dig.gety() > -4 and dig.getz() == dig.getzmin()+1 then
     -- Up at the top
-    dig.fwd()
-    dig.up()
-    placeStairs()
+    if not isDone() then -- Added check before final steps
+      dig.fwd()
+      dig.up()
+      placeStairs()
+    end
    end --if
-   if isDone() then break end
   end --while
 
  elseif dig.getr()%360 == 270 then
-  while dig.getx() > dig.getxmin()+1 do
+  while dig.getx() > dig.getxmin()+1 and not isDone() do -- Added isDone() check
    dig.fwd()
    dig.up()
    placeStairs()
-   if isDone() then break end
   end --while
 
  end --if/else
 
- if not isDone() then dig.left() end
+ if isDone() then break end -- Add explicit break check
+ dig.left()
 
 end --while
 
 
--- All Done!
+-- All Done! - Modified completion section
 turtle.select(1)
+
+-- Add an explicit position check and correction if needed
+if dig.gety() > 0 then
+    -- If we're above ground level, go back down to y=0
+    dig.gotoy(0)
+end
+
+-- Return to origin with explicit coordinates
 dig.goto(0,0,0,0)
 
 if success then
- flex.send("Stairway finished!",
-   colors.lightBlue)
-   sendStatus(false, "Stairway finished!")
+ flex.send("Stairway finished!", colors.lightBlue)
+ sendStatus(false, "Stairway finished!")
 else
- flex.send("Reached Origin",
-   colors.lightBlue)
-   sendStatus(false, "Reached origin.")
+ flex.send("Reached Origin", colors.lightBlue)
+ sendStatus(false, "Reached origin.")
 end --if
 
 flex.modemOff()
