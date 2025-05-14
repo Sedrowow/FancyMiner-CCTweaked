@@ -678,66 +678,126 @@ local inner_loop_dimension = zmax
 -- Assuming the outer loop moves along the X axis (width) and handles layer changes
 local outer_loop_dimension = xmax
 
+-- Add state validation function near the top of the file
+local function validateState()
+    -- Validate position bounds
+    if dig.getx() >= xmax or dig.getx() < 0 then
+        flex.send("Position out of X bounds, attempting recovery...", colors.red)
+        dig.gotox(math.min(math.max(dig.getx(), 0), xmax-1))
+    end
+    if dig.getz() >= zmax or dig.getz() < 0 then
+        flex.send("Position out of Z bounds, attempting recovery...", colors.red)
+        dig.gotoz(math.min(math.max(dig.getz(), 0), zmax-1))
+    end
+    
+    -- Validate rotation
+    local r = dig.getr() % 360
+    if r ~= 0 and r ~= 90 and r ~= 180 and r ~= 270 then
+        flex.send("Invalid rotation detected, correcting...", colors.red)
+        dig.gotor(math.floor(r/90) * 90)
+    end
+    
+    return true
+end
+
+-- Add state save function
+local function saveCurrentState()
+    -- Save current position and state
+    dig.saveCoords()
+    -- Verify save was successful
+    if not dig.saveExists() then
+        flex.send("Warning: Failed to save state!", colors.red)
+    end
+end
+
+-- Modify the main mining loop to include state validation
 while not done and not dig.isStuck() do
- -- checkReceivedCommand() -- Remove if not doing remote control
- turtle.select(1)
-
- -- **MODIFIED: Inner loop to traverse exactly `inner_loop_dimension` steps**
- for step = 1, inner_loop_dimension do
-  -- checkReceivedCommand() -- Remove if not doing remote control
-
-  checkAll(0) -- checkAll calls checkProgress, which calls status send logic and speed learning
-
-  -- Set rotation based on current Z direction (zdir)
-  if zdir == 1 then dig.gotor(0) -- Face North (+Z)
-  elseif zdir == -1 then dig.gotor(180) -- Face South (-Z)
-  end --if/else
-  checkNewLayer() -- This function seems related to layer changes and rotation, might need review if it causes issues here
-
-  dig.fwd() -- Move one step forward in the current direction
-
-  if dig.isStuck() then
-   done = true
-   break -- Exit the for loop if stuck
-  end --if
-
- end --for (traverse a row)
-
- if done then break end
-
- -- After traversing a row, change Z direction and move to the next row along X
- zdir = -zdir
- newlayer = false
-
- -- Move to the next row along the X axis (outer_loop_dimension)
- -- This logic seems to handle moving one step along X and turning at the edges of the quarry
- if dig.getx()<=0 and xdir==-1 then
-  newlayer = true -- Reached an X boundary, prepare for layer change if needed
- elseif dig.getx()>=outer_loop_dimension-1 and xdir==1 then -- Use outer_loop_dimension (xmax) here
-  newlayer = true -- Reached an X boundary, prepare for layer change if needed
- else
-  checkAll(0) -- Check before moving along X
-  dig.gotox(dig.getx()+xdir) -- Move one step along the X axis
- end --if/else
-
- -- Check if it's time to move down to the next layer
- if newlayer and not dig.isStuck() then
-  xdir = -xdir -- Change X direction for the next layer
-  -- Check if we have reached the target depth
-  if dig.gety() <= ymin then -- Use ymin (target depth) as the condition
-      done = true -- Finished all layers
-      break -- Exit the outer while loop
-  end
-  checkAll(0) -- Check before moving down
-  dig.down() -- Move down to the next layer
-  -- Add print at the start of a new layer
-  flex.printColors("Starting new layer at Y="..tostring(dig.gety()), colors.purple)
-  -- Reset speed learning timer and counter at the start of a new layer
-  blocks_since_last_speed_check = 0
-  time_of_last_speed_check = os.epoch("local") or 0
- end --if
-
-end --while (cuboid dig loop)
+    -- Validate state before each major operation
+    validateState()
+    
+    turtle.select(1)
+    
+    -- **MODIFIED: Inner loop to traverse exactly `inner_loop_dimension` steps**
+    for step = 1, inner_loop_dimension do
+        checkAll(0)
+        
+        -- Set rotation based on current Z direction (zdir)
+        if zdir == 1 then 
+            dig.gotor(0) -- Face North (+Z)
+        elseif zdir == -1 then 
+            dig.gotor(180) -- Face South (-Z)
+        end
+        
+        -- Save state before movement
+        saveCurrentState()
+        
+        -- Move forward with validation
+        if not dig.fwd() then
+            flex.send("Forward movement failed, attempting recovery...", colors.yellow)
+            validateState()
+            if not dig.fwd() then
+                done = true
+                break
+            end
+        end
+        
+        -- Validate position after movement
+        validateState()
+        
+        if dig.isStuck() then
+            done = true
+            break
+        end
+    end
+    
+    if done then break end
+    
+    -- After traversing a row, change Z direction and move to next row along X
+    zdir = -zdir
+    newlayer = false
+    
+    -- Validate state before edge handling
+    validateState()
+    
+    -- Move to the next row along the X axis
+    if dig.getx() <= 0 and xdir == -1 then
+        newlayer = true
+    elseif dig.getx() >= outer_loop_dimension-1 and xdir == 1 then
+        newlayer = true
+    else
+        checkAll(0)
+        -- Save state before X movement
+        saveCurrentState()
+        dig.gotox(dig.getx() + xdir)
+    end
+    
+    -- Handle layer transition
+    if newlayer and not dig.isStuck() then
+        xdir = -xdir
+        -- Save state before layer change
+        saveCurrentState()
+        
+        if dig.gety() <= ymin then
+            done = true
+            break
+        end
+        
+        checkAll(0)
+        if not dig.down() then
+            flex.send("Layer transition failed, attempting recovery...", colors.red)
+            validateState()
+            if not dig.down() then
+                done = true
+                break
+            end
+        end
+        
+        -- Validate state after layer change
+        validateState()
+        
+        flex.printColors("Starting new layer at Y="..tostring(dig.gety()), colors.purple)
+    end
+end
 
 
 flex.send("Digging completed, returning to surface",
