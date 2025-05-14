@@ -1,6 +1,4 @@
 -- --- Configuration ---
--- !! IMPORTANT !!
--- Replace with the raw URL to the root of your GitHub repository's main branch.
 local githubBaseUrl = "https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/main/"
 
 -- List the exact filenames for each setup type.

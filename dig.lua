@@ -1,6 +1,5 @@
 -- This is an API for digging and
 -- keeping track of motion
--- <Flexico64@gmail.com>
 
 -- x is right, y is up, z is forward
 -- r is clockwise rotation in degrees
