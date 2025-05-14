@@ -261,7 +261,7 @@ end --if
 
 
 ----------------------------------
---    /¯¯\\  /\\  ||  || |¯¯]     --
+--    /¯\\  /\\  ||  || |¯¯]     --
 --    \\_¯\\ |  |  \\//  | ]     --
 --    \\__/ ||||    \\/  |__]     --
 ----------------------------------
@@ -351,7 +351,7 @@ end --function
 -----------------------------------------
 -- ||   /¯\\  /¯] /\\ [¯¯][¯¯] /¯\\ |\\ || --
 -- ||_ | O || [ |  | ||  ][ | O || \\ | --
--- |__] \\_/  \\_]|||| || [__] \\_/ || \\| --
+-- |__] \\_/ |||||_/ //  \\__/||||  \\/  |__]--
 -----------------------------------------
 --||  || /\\ |¯\\[¯¯] /\\ |¯\\||  |¯¯]/¯¯\\ --
 -- \\// |  || / ][ |  || <||_ | ] \\_¯\\ --
@@ -1034,31 +1034,50 @@ end --function
 
 
 function dig(x)
-  local a,b
+  local a,b,success
   x = x or "fwd"
+  success = false -- Track if we actually dug something
 
   if x=="fwd" then
-  while turtle.dig() and not stuck do
-    dugtotal = dugtotal + 1 -- Keep this increment here, as this counts successful *dig attempts*, not necessarily movement into the space. A dig might fail or yield no block.
-    -- addBlocksProcessed(1) -- Removed here, handled by successful move (into the dug space) in fwd()
-    -- Item pickup is handled by turtle.dig() if successful and space is available.
-  end --while
+    -- First check if there's actually a block to dig
+    if turtle.detect() then
+      while turtle.dig() do
+        success = true -- We successfully dug at least one block
+        -- Item pickup is handled by turtle.dig() if successful and space is available
+      end
+    end
+    if success then
+      dugtotal = dugtotal + 1 -- Increment only if we actually dug something
+      addBlocksProcessed(1) -- Count this location as processed
+    end
 
   elseif x=="up" then
-  while turtle.digUp() and not stuck do
-    dugtotal = dugtotal + 1 -- Keep this increment here
-    -- addBlocksProcessed(1) -- Removed here, handled by successful move (into the dug space) in up()
-    -- Item pickup is handled by turtle.digUp() if successful and space is available.
-  end --while
+    if turtle.detectUp() then
+      while turtle.digUp() do
+        success = true
+        -- Item pickup is handled by turtle.digUp() if successful and space is available
+      end
+    end
+    if success then
+      dugtotal = dugtotal + 1
+      addBlocksProcessed(1)
+    end
 
   elseif x=="down" then
-  while turtle.digDown() and not stuck do
-    dugtotal = dugtotal + 1 -- Keep this increment here
-    -- addBlocksProcessed(1) -- Removed here, handled by successful move (into the dug space) in down()
-    -- Item pickup is handled by turtle.digDown() if successful and space is available.
-  end --while
+    if turtle.detectDown() then
+      while turtle.digDown() do
+        success = true
+        -- Item pickup is handled by turtle.digDown() if successful and space is available
+      end
+    end
+    if success then
+      dugtotal = dugtotal + 1
+      addBlocksProcessed(1)
+    end
 
   end --if/else
+
+  return success -- Return whether we actually dug something
 end --function
 
 function digUp() dig("up") end
