@@ -52,6 +52,7 @@ if setupType == "1" then
             if askname == "" then
                 print("No name provided. CAlling it 'FAncyMiner")
                 askname = "FancyMiner"
+            end
             shell.run("label set" .. " " .. askname)
             print("Turtle labeled: '" .. askname .. "'.")
         else
