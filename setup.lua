@@ -47,18 +47,17 @@ if setupType == "1" then
     if allDownloaded then
         -- Label the turtle if it is one
         if turtle then
-            print("what should the turtle be called?")
-            askname = io.read()
-            if askname == "" then
-                print("No name provided. CAlling it 'FAncyMiner")
-                askname = "FancyMiner"
+            print("What should be the name of this Turtle?")
+            name = io.read()
+            if name == "" then
+                name = "FancyMiner"
             end
-            shell.run("label set" .. " " .. askname)
-            print("Turtle labeled: '" .. askname .. "'.")
+            shell.run("label set " .. name)
+            print("Turtle labeled '" .. name .. "'.")
         else
             print("Not a turtle. Skipping labeling.")
         end
-    end
+
         os.sleep(2)
 
         -- Ask about automatic setup
