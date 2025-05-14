@@ -58,7 +58,7 @@ if setupType == "1" then
         else
             print("Not a turtle. Skipping labeling.")
         end
-
+    end
         os.sleep(2)
 
         -- Ask about automatic setup
