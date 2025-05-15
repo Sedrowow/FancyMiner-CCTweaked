@@ -452,22 +452,6 @@ while true do
  x = x + 1
  sendStatus(true, "Turned right, starting next row.")
 
- -- Ensure proper alignment before continuing
- direction = dig.getr()
- if direction % 360 == 0 then
-     -- Facing North, align to the next row
-     dig.gotox(dig.getx() + 1)
- elseif direction % 360 == 90 then
-     -- Facing East, align to the next row
-     dig.gotoz(dig.getz() + 1)
- elseif direction % 360 == 180 then
-     -- Facing South, align to the next row
-     dig.gotox(dig.getx() - 1)
- elseif direction % 360 == 270 then
-     -- Facing West, align to the next row
-     dig.gotoz(dig.getz() - 1)
- end
-
  direction = dig.getr()
  for n=0,dx-1 do
   if not stepDown() then break end
@@ -819,13 +803,16 @@ local function placeStairs()
   end --if
  end --if
 
- dig.placeDown()
+ -- Modified stair placement to ensure correct orientation
+ if not turtle.detectDown() then
+   dig.placeDown() -- Place a solid block first if needed
+ end
  dig.right()
- dig.fwd()
+ if not dig.fwd() then return false end
  dig.left()
- dig.placeDown()
+ if not dig.placeDown() then return false end
  dig.left()
- dig.fwd()
+ if not dig.fwd() then return false end
  dig.right()
  sendStatus(true, "Placing stairs.")
  return true
@@ -846,39 +833,39 @@ while not isDone() do
     sendStatus(true, "Ascending...")
 
  if dig.getr()%360 == 0 then
-  while dig.getz() < dig.getzmax()-1 and not isDone() do -- Added isDone() check
-   dig.fwd()
-   dig.up()
-   placeStairs()
+  while dig.getz() < dig.getzmax()-1 and not isDone() do
+   if not dig.fwd() then break end
+   if not dig.up() then break end
+   if not placeStairs() then break end
   end --while
 
  elseif dig.getr()%360 == 90 then
-  while dig.getx() < dig.getxmax()-1 and not isDone() do -- Added isDone() check
-   dig.fwd()
-   dig.up()
-   placeStairs()
+  while dig.getx() < dig.getxmax()-1 and not isDone() do
+   if not dig.fwd() then break end
+   if not dig.up() then break end
+   if not placeStairs() then break end
   end --while
 
  elseif dig.getr()%360 == 180 then
-  while dig.getz() > dig.getzmin()+1 and not isDone() do -- Added isDone() check
-   dig.fwd()
-   dig.up()
-   placeStairs()
+  while dig.getz() > dig.getzmin()+1 and not isDone() do
+   if not dig.fwd() then break end
+   if not dig.up() then break end
+   if not placeStairs() then break end
    if dig.gety() > -4 and dig.getz() == dig.getzmin()+1 then
     -- Up at the top
-    if not isDone() then -- Added check before final steps
-      dig.fwd()
-      dig.up()
-      placeStairs()
+    if not isDone() then
+      if not dig.fwd() then break end
+      if not dig.up() then break end
+      if not placeStairs() then break end
     end
    end --if
   end --while
 
  elseif dig.getr()%360 == 270 then
-  while dig.getx() > dig.getxmin()+1 and not isDone() do -- Added isDone() check
-   dig.fwd()
-   dig.up()
-   placeStairs()
+  while dig.getx() > dig.getxmin()+1 and not isDone() do
+   if not dig.fwd() then break end
+   if not dig.up() then break end
+   if not placeStairs() then break end
   end --while
 
  end --if/else
