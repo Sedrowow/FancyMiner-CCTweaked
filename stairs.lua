@@ -452,6 +452,22 @@ while true do
  x = x + 1
  sendStatus(true, "Turned right, starting next row.")
 
+ -- Ensure proper alignment before continuing
+ direction = dig.getr()
+ if direction % 360 == 0 then
+     -- Facing North, align to the next row
+     dig.gotox(dig.getx() + 1)
+ elseif direction % 360 == 90 then
+     -- Facing East, align to the next row
+     dig.gotoz(dig.getz() + 1)
+ elseif direction % 360 == 180 then
+     -- Facing South, align to the next row
+     dig.gotox(dig.getx() - 1)
+ elseif direction % 360 == 270 then
+     -- Facing West, align to the next row
+     dig.gotoz(dig.getz() - 1)
+ end
+
  direction = dig.getr()
  for n=0,dx-1 do
   if not stepDown() then break end
