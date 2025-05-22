@@ -11,6 +11,18 @@ local TORCH_SLOT = 2
 local BLOCK_SLOT = 3
 local DEFAULT_MAX_DISTANCE = 100
 local DEFAULT_MIN_ORES = 32
+-- Add protected block types
+local PROTECTED_BLOCKS = {
+    "minecraft:chest",
+    "ironchest:",
+    "sophisticatedstorage:",
+    "minecraft:trapped_chest",
+    "minecraft:barrel",
+    "minecraft:shulker_box",
+    "storagedrawers:",
+    "minecraft:hopper",
+    "turtle"
+}
 
 -- Config handling functions
 local function createDefaultConfig()
@@ -149,30 +161,137 @@ local function depositItems()
     -- Return to start
     dig.goto(0, 0, 0, 180)  -- Face the chest
     
-    -- Deposit everything except fuel, torches, and blocks
-    for slot = 4, 16 do
+    -- Save the selected slot
+    local selectedSlot = turtle.getSelectedSlot()
+    
+    -- Deposit everything except fuel, torches, and emergency blocks
+    for slot = 1, 16 do
         turtle.select(slot)
-        turtle.drop()
+        if slot ~= FUEL_SLOT and slot ~= TORCH_SLOT and slot ~= BLOCK_SLOT then
+            turtle.drop()
+        end
     end
+    
+    -- Restore selected slot
+    turtle.select(selectedSlot)
     
     -- Return to mining position
     dig.goto(currentPos.x, currentPos.y, currentPos.z, dig.getr())
 end
 
--- Function to scan for ores in the area
+-- Function to check if a block should be protected
+local function isProtectedBlock(blockName)
+    if not blockName then return false end
+    for _, protected in ipairs(PROTECTED_BLOCKS) do
+        if blockName:find(protected) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Add new configuration values
+local TUNNEL_WIDTH = 3
+local SCAN_RADIUS = 5
+local TORCH_INTERVAL = 6
+local VEIN_MAX_DISTANCE = 2 -- Maximum distance between ores to be considered same vein
+local STATE_FILE = "oreminer_state.dat"
+
+-- State tracking
+local state = {
+    position = {x = 0, y = 0, z = 0, r = 0},
+    distanceTraveled = 0,
+    oresFound = 0,
+    currentVein = {},
+    knownOres = {}, -- Format: {x=x, y=y, z=z, name=name, mined=bool}
+    originPos = {x = 0, y = 0, z = 0}
+}
+
+-- Function to save state
+local function saveState()
+    local file = fs.open(STATE_FILE, "w")
+    file.write(textutils.serialize(state))
+    file.close()
+end
+
+-- Function to load state
+local function loadState()
+    if fs.exists(STATE_FILE) then
+        local file = fs.open(STATE_FILE, "r")
+        state = textutils.unserialize(file.readLine())
+        file.close()
+        return true
+    end
+    return false
+end
+
+-- Function to calculate distance between two points (including diagonal)
+local function getDistance(pos1, pos2)
+    return math.max(
+        math.abs(pos1.x - pos2.x),
+        math.abs(pos1.y - pos2.y),
+        math.abs(pos1.z - pos2.z)
+    )
+end
+
+-- Function to check if an ore belongs to current vein
+local function isPartOfVein(ore)
+    for _, knownOre in ipairs(state.currentVein) do
+        if getDistance(ore, knownOre) <= VEIN_MAX_DISTANCE then
+            return true
+        end
+    end
+    return false
+end
+
+-- Modified scan function to track veins
 local function scanForOres()
-    local ores = {}
-    local scan = geoScanner.scan(MAX_SCAN_RADIUS)
+    if not geoScanner then return {} end
     
+    local ores = {}
+    local scan = geoScanner.scan(SCAN_RADIUS)
+    
+    if not scan then return {} end
+    
+    -- Convert scanner coordinates to absolute coordinates
     for _, block in ipairs(scan) do
-        for _, targetOre in ipairs(config.target_ores) do
-            if block.name == targetOre then
-                table.insert(ores, {
-                    x = block.x,
-                    y = block.y,
-                    z = block.z,
-                    name = block.name
-                })
+        if block and block.name and not isProtectedBlock(block.name) then
+            if block.name:find("ore") and not block.name:find("chest") and not block.name:find("barrel") then
+                for _, targetOre in ipairs(config.target_ores) do
+                    if block.name == targetOre then
+                        local absolutePos = {
+                            x = state.position.x + block.x,
+                            y = state.position.y + block.y,
+                            z = state.position.z + block.z,
+                            name = block.name
+                        }
+                        
+                        -- Check if ore is already known
+                        local isKnown = false
+                        for _, known in ipairs(state.knownOres) do
+                            if known.x == absolutePos.x and 
+                               known.y == absolutePos.y and 
+                               known.z == absolutePos.z then
+                                isKnown = true
+                                break
+                            end
+                        end
+                        
+                        if not isKnown then
+                            table.insert(state.knownOres, absolutePos)
+                            if isPartOfVein(absolutePos) then
+                                table.insert(state.currentVein, absolutePos)
+                                table.insert(ores, {
+                                    x = block.x,
+                                    y = block.y,
+                                    z = block.z,
+                                    name = block.name
+                                })
+                            end
+                        end
+                        break
+                    end
+                end
             end
         end
     end
@@ -180,24 +299,193 @@ local function scanForOres()
     return ores
 end
 
--- Function to mine to specific coordinates relative to current position
-local function mineToCoordinates(x, y, z)
-    local startX = dig.getx()
-    local startY = dig.gety()
-    local startZ = dig.getz()
+-- Function to check and fill holes in a wall or floor
+local function fillHole(direction)
+    turtle.select(BLOCK_SLOT)
+    if direction == "down" then
+        if not turtle.detectDown() then
+            turtle.placeDown()
+            return true
+        end
+    elseif direction == "up" then
+        if not turtle.detectUp() then
+            turtle.placeUp()
+            return true
+        end
+    elseif direction == "forward" then
+        if not turtle.detect() then
+            turtle.place()
+            return true
+        end
+    end
+    return false
+end
+
+-- Function to check wall and place block if needed, separate from floor/ceiling checks
+local function fillWall()
+    turtle.select(BLOCK_SLOT)
+    if not turtle.detect() then
+        dig.place()
+        return true
+    end
+    return false
+end
+
+-- Function to dig 3x3 tunnel section
+local function digTunnelSection()
+    -- Store initial orientation
+    local startR = dig.getr()
     
-    -- Mine to the ore
-    dig.gotoy(y)
-    dig.gotox(x)
-    dig.gotoz(z)
+    -- Ensure we're facing forward (north = 0 degrees)
+    dig.gotor(0)
     
-    -- Mine the ore
+    -- Bottom layer
+    -- Dig and fill center floor
     dig.dig()
-    blocksDug = blocksDug + 1
-    oresFound = oresFound + 1
+    if not turtle.detectDown() then
+        turtle.select(BLOCK_SLOT)
+        dig.placeDown()
+    end
     
-    -- Return to tunnel
-    dig.goto(startX, startY, startZ, dig.getr())
+    -- Left side bottom
+    dig.left()
+    dig.dig()
+    dig.fwd()
+    -- Check and fill both floor and wall independently
+    if not turtle.detectDown() then
+        turtle.select(BLOCK_SLOT)
+        dig.placeDown()
+    end
+    fillWall() -- Always check and fill wall regardless of floor
+    dig.back()
+    
+    -- Right side bottom
+    dig.right(2)
+    dig.dig()
+    dig.fwd()
+    -- Check and fill both floor and wall independently
+    if not turtle.detectDown() then
+        turtle.select(BLOCK_SLOT)
+        dig.placeDown()
+    end
+    fillWall() -- Always check and fill wall regardless of floor
+    dig.back()
+    dig.left()
+    
+    -- Middle layer
+    dig.up()
+    dig.dig()
+    
+    -- Left wall
+    dig.left()
+    dig.dig()
+    dig.fwd()
+    fillWall() -- Always check and fill wall
+    dig.back()
+    
+    -- Right wall
+    dig.right(2)
+    dig.dig()
+    dig.fwd()
+    fillWall() -- Always check and fill wall
+    dig.back()
+    dig.left()
+    
+    -- Top layer
+    dig.up()
+    
+    -- Center ceiling
+    dig.dig()
+    if not turtle.detectUp() then
+        turtle.select(BLOCK_SLOT)
+        dig.placeUp()
+    end
+    
+    -- Left side top
+    dig.left()
+    dig.dig()
+    dig.fwd()
+    -- Check and fill both ceiling and wall independently
+    if not turtle.detectUp() then
+        turtle.select(BLOCK_SLOT)
+        dig.placeUp()
+    end
+    fillWall() -- Always check and fill wall regardless of ceiling
+    dig.back()
+    
+    -- Right side top
+    dig.right(2)
+    dig.dig()
+    dig.fwd()
+    -- Check and fill both ceiling and wall independently
+    if not turtle.detectUp() then
+        turtle.select(BLOCK_SLOT)
+        dig.placeUp()
+    end
+    fillWall() -- Always check and fill wall regardless of ceiling
+    dig.back()
+    dig.left()
+    
+    -- Place torch if needed
+    if state.distanceTraveled % TORCH_INTERVAL == 0 then
+        turtle.select(TORCH_SLOT)
+        dig.down(2)
+        turtle.placeDown()
+        dig.up(2)
+    end
+    
+    -- Return to starting position
+    dig.down(2)
+    dig.gotor(startR)
+    
+    -- Ensure block slot is selected
+    turtle.select(BLOCK_SLOT)
+end
+
+-- Modified main mining loop
+local function mineOreVein()
+    while #state.currentVein > 0 do
+        -- Get next closest ore
+        local closest = state.currentVein[1]
+        local minDist = math.huge
+        
+        for i, ore in ipairs(state.currentVein) do
+            local dist = getDistance(state.position, ore)
+            if dist < minDist then
+                minDist = dist
+                closest = ore
+            end
+        end
+        
+        -- Mine the ore
+        if mineToCoordinates(
+            closest.x - state.position.x,
+            closest.y - state.position.y,
+            closest.z - state.position.z
+        ) then
+            -- Remove from vein and mark as mined
+            for i, ore in ipairs(state.currentVein) do
+                if ore.x == closest.x and 
+                   ore.y == closest.y and 
+                   ore.z == closest.z then
+                    table.remove(state.currentVein, i)
+                    break
+                end
+            end
+            for i, ore in ipairs(state.knownOres) do
+                if ore.x == closest.x and 
+                   ore.y == closest.y and 
+                   ore.z == closest.z then
+                    ore.mined = true
+                    break
+                end
+            end
+        end
+        
+        -- Scan for new connected ores
+        scanForOres()
+        saveState()
+    end
 end
 
 -- Main mining loop
@@ -206,46 +494,59 @@ flex.send("Target ores: " .. table.concat(config.target_ores, ", "), colors.ligh
 flex.send("Minimum ores: " .. config.min_ores, colors.lightBlue)
 flex.send("Maximum distance: " .. config.max_distance, colors.lightBlue)
 
--- Start at height y=12 (good for most valuable ores)
-dig.goto(0, -12, 0, 0)
+-- Always start facing forward (0 degrees)
+dig.gotor(0)
 
-while distanceTraveled < config.max_distance and oresFound < config.min_ores do
+-- Create initial entry tunnel (4 blocks)
+flex.send("Creating entry tunnel...", colors.yellow)
+for i = 1, 4 do
+    digTunnelSection()
+    -- Move forward while maintaining orientation
+    dig.gotor(0)  -- Ensure we're facing forward
+    if dig.fwd() then
+        state.distanceTraveled = state.distanceTraveled + 1
+        state.position = {
+            x = dig.getx(),
+            y = dig.gety(),
+            z = dig.getz(),
+            r = dig.getr()
+        }
+        saveState()
+    end
+end
+
+-- Now continue with main mining loop
+while state.distanceTraveled < config.max_distance and state.oresFound < config.min_ores do
     -- Check fuel
     if turtle.getFuelLevel() < 100 then
         refuelFromChest()
     end
     
-    -- Check inventory
-    if turtle.getItemCount(16) > 0 then
+    if turtle.getItemCount(14) > 0 then
         depositItems()
     end
     
-    -- Scan for ores
+    -- Dig tunnel section and move forward
+    digTunnelSection()
+    
+    -- Move forward at ground level
+    dig.gotor(0)  -- Ensure we're facing forward
+    if dig.fwd() then
+        state.distanceTraveled = state.distanceTraveled + 1
+        state.position = {
+            x = dig.getx(),
+            y = dig.gety(),
+            z = dig.getz(),
+            r = dig.getr()
+        }
+        saveState()
+    end
+    
+    -- Scan for ores after moving
     local ores = scanForOres()
     if #ores > 0 then
         flex.send("Found " .. #ores .. " matching ores nearby!", colors.green)
-        
-        -- Mine each ore found
-        for _, ore in ipairs(ores) do
-            mineToCoordinates(ore.x, ore.y, ore.z)
-            flex.send("Mined " .. ore.name .. " (" .. oresFound .. "/" .. config.min_ores .. ")", colors.lightBlue)
-        end
-    end
-    
-    -- Move forward in main tunnel
-    if dig.fwd() then
-        distanceTraveled = distanceTraveled + 1
-        
-        -- Place torch every 8 blocks
-        if distanceTraveled % 8 == 0 then
-            turtle.select(TORCH_SLOT)
-            turtle.placeUp()
-        end
-    end
-    
-    -- Progress update
-    if distanceTraveled % 10 == 0 then
-        flex.send("Distance: " .. distanceTraveled .. "m, Ores found: " .. oresFound, colors.yellow)
+        mineOreVein()
     end
 end
 
@@ -255,7 +556,9 @@ flex.send("Total distance: " .. distanceTraveled .. "m", colors.lightBlue)
 flex.send("Total ores: " .. oresFound, colors.lightBlue)
 flex.send("Total blocks dug: " .. blocksDug, colors.lightBlue)
 
-dig.goto(0, 0, 0, 0)
+-- Ensure we're facing the right way before returning
+dig.gotor(0)  -- Face the starting direction (north)
+dig.goto(0, 0, 0, 0)  -- Return to start while maintaining orientation
 depositItems()
 
 os.unloadAPI("dig.lua")

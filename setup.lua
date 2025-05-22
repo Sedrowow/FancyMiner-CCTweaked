@@ -3,8 +3,8 @@ local githubBaseUrl = "https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCT
 
 -- List the exact filenames for each setup type.
 local minerScripts = {"flex.lua", "dig.lua", "quarry.lua", "stairs.lua"} -- Add any other miner scripts here
-local receiverScripts = {"flex.lua", "receive.lua"}
-local oreminerScripts = {"flex.lua", "dig.lua", "advancedperipherals/oreminer.lua"} -- Added ore miner scripts
+local receiverScripts = {"flex.lua", "receive.lua","advancedperipherals/receiver0.lua"}
+local oreminerScripts = {"advancedperipherals/flex.lua", "advancedperipherals/dig.lua", "advancedperipherals/oreminer.lua"} -- Added ore miner scripts
 -- -------------------
 
 -- Function to download a script and provide feedback
