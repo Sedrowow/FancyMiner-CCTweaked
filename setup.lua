@@ -4,6 +4,7 @@ local githubBaseUrl = "https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCT
 -- List the exact filenames for each setup type.
 local minerScripts = {"flex.lua", "dig.lua", "quarry.lua", "stairs.lua"} -- Add any other miner scripts here
 local receiverScripts = {"flex.lua", "receive.lua"}
+local oreminerScripts = {"flex.lua", "dig.lua", "advancedperipherals/oreminer.lua"} -- Added ore miner scripts
 -- -------------------
 
 -- Function to download a script and provide feedback
@@ -26,7 +27,7 @@ end
 
 print("##Universal Setup Script##")
 print("--------------------------")
-print("Is this the 1=Miner or 2=receiver?")
+print("Is this the 1=Miner, 2=receiver or 3=oreminer?")
 
 local setupType = io.read()
 
@@ -195,8 +196,64 @@ elseif setupType == "2" then
         print("Invalid choice for computer type. Please enter 1 or 2.")
     end
 
+elseif setupType == "3" then
+    -- --- Ore Miner Setup ---
+    print("Setting up as Ore Miner...")
+
+    -- Download Ore Miner Scripts
+    local allDownloaded = true
+    for _, scriptName in ipairs(oreminerScripts) do
+        if not downloadScript(scriptName) then
+            allDownloaded = false
+        end
+    end
+
+    if allDownloaded then
+        -- Label the turtle if it is one
+        if turtle then
+            print("What should be the name of this Turtle?")
+            name = io.read()
+            if name == "" then
+                name = "OreMiner"
+            end
+            shell.run("label set " .. name)
+            print("Turtle labeled '" .. name .. "'.")
+        else
+            print("Not a turtle. Skipping labeling.")
+        end
+
+        os.sleep(2)
+
+        -- Ask about automatic setup
+        print("automatically set up? 1:yes 2:no")
+        local autoSetup = io.read()
+
+        if autoSetup == "1" then
+            print("Running flex.lua for initial setup...")
+            shell.run("flex.lua")
+            print("flex setup done.")
+            os.sleep(1)
+
+            print("Running dig.lua for setup...")
+            shell.run("dig.lua")
+            print("dig setup done.")
+            os.sleep(1)
+
+            print("------------------------------------")
+            print("Setup complete!")
+            print("use command 'oreminer' for usage")
+            print("or check flex_options.cfg for settings")
+            print("------------------------------------")
+        else
+            print("Manual setup selected.")
+            print("Please run 'flex.lua' and 'dig.lua' manually to configure.")
+            print("Check flex_options.cfg for settings.")
+        end
+    else
+        print("Some scripts failed to download. Please check the error messages above.")
+    end
 else
-    print("Invalid choice for setup type. Please enter 1 or 2.")
+    print("Invalid choice for setup type. Please enter 1, 2 or 3.")
 end
 
 print("Setup script finished.")
