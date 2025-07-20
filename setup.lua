@@ -119,7 +119,7 @@ elseif setupType == "2" then
 
             print("---------------------------------------")
             print("'check flex_options.cfg' for settings")
-            print("or run 'recieve' to start recieving")
+            print("or run 'receive' to start receiving")
             print("---------------------------------------")
         else
              print("Some scripts failed to download. Please check the error messages above.")
@@ -175,7 +175,7 @@ elseif setupType == "2" then
                     local startupFile = fs.open("startup.lua", "w")
                     if startupFile then
                         startupFile.write('shell.run("monitor scale ' .. monitorPosition .. ' 0.5")\n')
-                        startupFile.write('shell.run("monitor ' .. monitorPosition .. ' recieve")\n')
+                        startupFile.write('shell.run("monitor ' .. monitorPosition .. ' receive")\n')
                         startupFile.close()
                         print("startup.lua created successfully.")
                     else
@@ -186,7 +186,7 @@ elseif setupType == "2" then
 
             print("---------------------------------------")
             print("'check flex_options.cfg' for settings")
-            print("or run 'recieve' to start recieving")
+            print("or run 'receive' to start receiving")
             print("---------------------------------------")
          else
              print("Some scripts failed to download. Please check the error messages above.")
