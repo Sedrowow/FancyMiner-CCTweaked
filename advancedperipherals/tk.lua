@@ -14005,20 +14005,33 @@ local function getTask(R)
 			R.up = menu.getBoolean({"Any blocks/trees above current level","in a 15 x 15 block area (y/n) "}, nil, {colors.yellow, colors.orange}, colors.black)
 		end
 	elseif R.choice == 23 then -- plant treefarm
-		 -- ask the user which layout they want
-  	  local sizeOptions = {"Single (4 saplings)","Double (8 saplings)","Mangrove style"}
-	 -- build a fresh pretty‑print for 3 options only
-	    local pp3 = {
-      		prompt      = colors.green,
-      		menuPrompt  = colors.yellow,
-      		itemColours = { colors.lime, colors.orange, colors.magenta }  -- exactly 3!
-    		}
-    	    local layoutOpts = {
-      	"Single (4 saplings)",
-      	"Double (8 saplings)",
-      	"Mangrove style"
-    	}
-    R.subChoice = menu.menu("Tree‑plant layout?", layoutOpts, pp3, "1–3 + Enter")
+ elseif R.choice == 23 then  -- Plant treefarm
+       -- 1) prompt for layout
+       local pp3 = {
+         prompt      = colors.green,
+         menuPrompt  = colors.yellow,
+         itemColours = { colors.lime, colors.orange, colors.magenta }
+       }
+       local layoutOpts = {
+         "Single (4 saplings)",
+         "Double (8 saplings)",
+         "Mangrove style"
+       }
+       R.subChoice = menu.menu("Tree‑plant layout?", layoutOpts, pp3, "1–3  Enter")
+
+       -- 2) reposition turtle over farm origin
+       R = utils.assessTreeFarm(R)
+       if R.message ~= "" then
+         return { R.message }   -- something was wrong with your setup
+       end
+
+       -- 3) clear & reload sapling inventory
+       plantTreefarm({ networkFarm = R.networkFarm, subChoice = R.subChoice, data = R.data })
+       lib.emptyInventory(R)
+       lib.getSaplingInventory(R)
+
+        -- now do the actual planting
+       retValue = plantTreefarm(R)
  	   retValue = plantTreefarm(R)
 		R = utils.assessTreeFarm(R)	-- sets network and sapling type
 		if R.message ~= "" then
