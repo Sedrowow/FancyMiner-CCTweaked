@@ -14010,6 +14010,7 @@ local function getTask(R)
       prompt      = colors.green,
       menuPrompt  = colors.yellow,
       itemColours = { colors.lime, colors.orange, colors.magenta }
+	}
        local layoutOpts = {
          "Single (4 saplings)",
          "Double (8 saplings)",
@@ -14030,7 +14031,6 @@ local function getTask(R)
 
         -- now do the actual planting
        retValue = plantTreefarm(R)
- 	   retValue = plantTreefarm(R)
 		R = utils.assessTreeFarm(R)	-- sets network and sapling type
 		if R.message ~= "" then
 			return {R.message}	-- location error
