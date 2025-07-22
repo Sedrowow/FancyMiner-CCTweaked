@@ -962,7 +962,7 @@ end
 
 function utils.assessTreeFarm(R)
 	local lib = {}
-		
+	
 	function lib.getSaplingType(R, blockType)
 		if blockType == "minecraft:mangrove_log" then
 			R.logType = "mangrove"
@@ -14005,8 +14005,7 @@ local function getTask(R)
 			R.up = menu.getBoolean({"Any blocks/trees above current level","in a 15 x 15 block area (y/n) "}, nil, {colors.yellow, colors.orange}, colors.black)
 		end
 	elseif R.choice == 23 then -- plant treefarm
-		R.subChoice = menu.getInteger("singletree (1), double trees (2) or mangrove trees (3)", 1, 3, nil, colors.red)
-
+		
 		R = utils.assessTreeFarm(R)	-- sets network and sapling type
 		if R.message ~= "" then
 			return {R.message}	-- location error
@@ -14967,6 +14966,8 @@ local function getTaskInventoryTo30(R)
 		end
 		retValue = createTreefarm(R)
 	elseif R.choice == 23 then -- Plant treefarm
+		local sizeOptions = {"Single (4 saplings)","Double (8 saplings)","Mangrove style"}
+		R.subChoice = menu.menu("Tree‐plant layout?", sizeOptions, pp, "1–3 + Enter")
 		if not R.networkFarm then
 			if R.subChoice == 1 then
 				utils.checkFuelNeeded(180)
