@@ -15362,13 +15362,13 @@ local function getTaskInventory(R)
 	
 	if R and type(R.choice) == "number" and R.choice < 31 then
 		return getTaskInventoryTo30(R) -- Mining, Forestry
-	elseif R.choice < 71 then
+	elseif  R and type(R.choice) == "number" and R.choice < 71 then
 		return getTaskInventoryTo70(R) -- Farming, Obsidian, Canal / Bridge
-	elseif R.choice > 500 and R.choice < 700 then
+	elseif  R and type(R.choice) == "number" and R.choice > 500 and R.choice < 700 then
 		return getTaskInventoryTo70(R)
 	else -- Area carving, Lava/Water, Railway
 		-- AREA CARVING
-		if R.choice == 71 then--Clear area
+		if R and type(R.choice) == "number" and R.choice == 71 then --Clear area
 			utils.checkFuelNeeded(R.width * R.length * 3)
 			if R.useBlockType == "dirt" then
 				T:checkInventoryForItem({"minecraft:dirt"}, {R.width * R.length})
