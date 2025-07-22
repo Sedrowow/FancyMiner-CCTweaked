@@ -14004,14 +14004,12 @@ local function getTask(R)
 		if R.data ~= "convert" and R.data ~= "convertStorage" then
 			R.up = menu.getBoolean({"Any blocks/trees above current level","in a 15 x 15 block area (y/n) "}, nil, {colors.yellow, colors.orange}, colors.black)
 		end
-	elseif R.choice == 23 then -- plant treefarm
- elseif R.choice == 23 then  -- Plant treefarm
+	elseif R.choice == 23 then  -- Plant treefarm
        -- 1) prompt for layout
-       local pp3 = {
-         prompt      = colors.green,
-         menuPrompt  = colors.yellow,
-         itemColours = { colors.lime, colors.orange, colors.magenta }
-       }
+	local pp3 = {
+      prompt      = colors.green,
+      menuPrompt  = colors.yellow,
+      itemColours = { colors.lime, colors.orange, colors.magenta }
        local layoutOpts = {
          "Single (4 saplings)",
          "Double (8 saplings)",
