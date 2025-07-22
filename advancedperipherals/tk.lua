@@ -14004,7 +14004,7 @@ local function getTask(R)
 		if R.data ~= "convert" and R.data ~= "convertStorage" then
 			R.up = menu.getBoolean({"Any blocks/trees above current level","in a 15 x 15 block area (y/n) "}, nil, {colors.yellow, colors.orange}, colors.black)
 		end
-
+end
 	elseif R.choice == 23 then  -- Plant treefarm
     -- 1) Ask which layout
     local pp3 = {
@@ -14039,8 +14039,6 @@ local function getTask(R)
 			pp.itemColours = {colors.lime, colors.green}
 			R.subChoice = menu.menu(prompt, choices, pp, "Type number + Enter ")
 		end
-	end
-end
 end
 	elseif R.choice == 24 then -- Harvest treefarm
 		R = utils.assessTreeFarm(R)	-- sets network and sapling type
