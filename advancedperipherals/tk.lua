@@ -14005,7 +14005,12 @@ local function getTask(R)
 			R.up = menu.getBoolean({"Any blocks/trees above current level","in a 15 x 15 block area (y/n) "}, nil, {colors.yellow, colors.orange}, colors.black)
 		end
 	elseif R.choice == 23 then -- plant treefarm
-		
+		 -- ask the user which layout they want
+  	  local sizeOptions = {"Single (4 saplings)","Double (8 saplings)","Mangrove style"}
+ 	  -- `pp` is your pretty‑print table; if undefined here, just pass `nil` or recreate one:
+ 	   pp = pp or { prompt = colors.green, itemColours = {colors.white, colors.white, colors.white}, menuPrompt = colors.yellow }
+ 	   R.subChoice = menu.menu("Tree‑plant layout?", sizeOptions, pp, "1–3 + Enter")
+ 	   retValue = plantTreefarm(R)
 		R = utils.assessTreeFarm(R)	-- sets network and sapling type
 		if R.message ~= "" then
 			return {R.message}	-- location error
