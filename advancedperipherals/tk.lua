@@ -14041,6 +14041,7 @@ local function getTask(R)
 		end
 	end
 end
+end
 	elseif R.choice == 24 then -- Harvest treefarm
 		R = utils.assessTreeFarm(R)	-- sets network and sapling type
 		if R.message ~= "" then
