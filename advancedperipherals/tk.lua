@@ -14027,7 +14027,6 @@ local function getTask(R)
 
     -- 3) Do the planting
     retValue = plantTreefarm(R)
-
 			if R.logType == "mangrove" then
 				R.subChoice = 3 -- mangrove
 			elseif R.logType == "spruce" or R.logType == "dark_oak" then
@@ -14040,6 +14039,7 @@ local function getTask(R)
 			pp.itemColours = {colors.lime, colors.green}
 			R.subChoice = menu.menu(prompt, choices, pp, "Type number + Enter ")
 		end
+	end
 end
 	elseif R.choice == 24 then -- Harvest treefarm
 		R = utils.assessTreeFarm(R)	-- sets network and sapling type
