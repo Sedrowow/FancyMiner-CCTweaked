@@ -14007,9 +14007,18 @@ local function getTask(R)
 	elseif R.choice == 23 then -- plant treefarm
 		 -- ask the user which layout they want
   	  local sizeOptions = {"Single (4 saplings)","Double (8 saplings)","Mangrove style"}
- 	  -- `pp` is your pretty‑print table; if undefined here, just pass `nil` or recreate one:
- 	   pp = pp or { prompt = colors.green, itemColours = {colors.white, colors.white, colors.white}, menuPrompt = colors.yellow }
- 	   R.subChoice = menu.menu("Tree‑plant layout?", sizeOptions, pp, "1–3 + Enter")
+	 -- build a fresh pretty‑print for 3 options only
+	    local pp3 = {
+      		prompt      = colors.green,
+      		menuPrompt  = colors.yellow,
+      		itemColours = { colors.lime, colors.orange, colors.magenta }  -- exactly 3!
+    		}
+    	    local layoutOpts = {
+      	"Single (4 saplings)",
+      	"Double (8 saplings)",
+      	"Mangrove style"
+    	}
+    R.subChoice = menu.menu("Tree‑plant layout?", layoutOpts, pp3, "1–3 + Enter")
  	   retValue = plantTreefarm(R)
 		R = utils.assessTreeFarm(R)	-- sets network and sapling type
 		if R.message ~= "" then
