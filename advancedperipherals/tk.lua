@@ -14005,6 +14005,8 @@ local function getTask(R)
 			R.up = menu.getBoolean({"Any blocks/trees above current level","in a 15 x 15 block area (y/n) "}, nil, {colors.yellow, colors.orange}, colors.black)
 		end
 	elseif R.choice == 23 then -- plant treefarm
+		R.subChoice = menu.getSelection({"Single","Double","Mangrove"},line, fg, bg)
+
 		R = utils.assessTreeFarm(R)	-- sets network and sapling type
 		if R.message ~= "" then
 			return {R.message}	-- location error
