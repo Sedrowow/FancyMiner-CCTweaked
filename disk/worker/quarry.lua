@@ -397,35 +397,43 @@ local function initializeWorker()
         elseif event == "modem_message" then
             local side, channel, replyChannel, message, distance = p1, p2, p3, p4, p5
             if type(message) == "table" then
-                if message.type == "zone_assignment" then
-                    -- Check if this might be our zone based on GPS
+                if message.type == "zone_assignment" and message.turtle_id == config.turtleID then
+                    -- This zone assignment is for us!
                     local currentGPS = getGPS(5)
-                    if currentGPS then
-                        local inZone = currentGPS.x >= message.gps_zone.gps_xmin and
-                                     currentGPS.x <= message.gps_zone.gps_xmax and
-                                     currentGPS.z >= message.gps_zone.gps_zmin and
-                                     currentGPS.z <= message.gps_zone.gps_zmax
-                        
-                        if inZone then
-                            config.zone = message.zone
-                            config.gps_zone = message.gps_zone
-                            config.chestGPS = message.chest_gps
-                            config.isCoordinated = true
-                            config.startGPS = currentGPS
-                            
-                            print("Zone assignment received!")
-                            print("Zone: X=" .. config.zone.xmin .. "-" .. config.zone.xmax)
-                            
-                            gotAssignment = true
-                            os.cancelTimer(initTimeout)
-                            
-                            -- Send ready signal
-                            modem.transmit(config.serverChannel, config.serverChannel, {
-                                type = "worker_ready",
-                                turtle_id = config.turtleID
-                            })
-                        end
+                    if not currentGPS then
+                        print("Warning: Could not verify GPS position")
+                        currentGPS = {x = 0, y = 0, z = 0} -- Use default if GPS fails
                     end
+                    
+                    config.zone = message.zone
+                    config.gps_zone = message.gps_zone
+                    config.chestGPS = message.chest_gps
+                    config.isCoordinated = true
+                    config.startGPS = currentGPS
+                    
+                    print("Zone assignment received!")
+                    print("Zone: X=" .. config.zone.xmin .. "-" .. config.zone.xmax)
+                    
+                    -- Verify we're in the right zone (optional validation)
+                    local inZone = currentGPS.x >= message.gps_zone.gps_xmin and
+                                 currentGPS.x <= message.gps_zone.gps_xmax and
+                                 currentGPS.z >= message.gps_zone.gps_zmin and
+                                 currentGPS.z <= message.gps_zone.gps_zmax
+                    
+                    if not inZone then
+                        print("Warning: Current position outside assigned zone!")
+                        print("Expected zone: X=" .. message.gps_zone.gps_xmin .. "-" .. message.gps_zone.gps_xmax)
+                        print("Current position: X=" .. currentGPS.x .. ", Z=" .. currentGPS.z)
+                    end
+                    
+                    gotAssignment = true
+                    os.cancelTimer(initTimeout)
+                    
+                    -- Send ready signal
+                    modem.transmit(config.serverChannel, config.serverChannel, {
+                        type = "worker_ready",
+                        turtle_id = config.turtleID
+                    })
                 end
             end
         end
