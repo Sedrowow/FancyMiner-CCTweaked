@@ -681,12 +681,17 @@ if coordinatedMode then
     
     -- Handle abort
     if not miningSuccess and config.aborted then
-        print("Returning to starting position...")
+        print("Abort received - dumping inventory and returning...")
         sendStatusUpdate("aborting")
         
-        -- Return to start position using dig.goto for accurate dead reckoning
-        dig.goto(0, 0, 0, 0)
-        print("Returned to dig.lua origin (0, 0, 0)")
+        -- Use queuedResourceAccess to handle the entire chest access sequence
+        -- This handles requesting, navigating, dumping, and returning automatically
+        queuedResourceAccess("output")
+        
+        -- Now navigate to starting position using GPS
+        print("Returning to starting position via GPS...")
+        gps_nav.goto(config.startGPS.x, config.startGPS.y, config.startGPS.z)
+        print("Returned to starting position: " .. textutils.serialize(config.startGPS))
         
         -- Send abort acknowledgment
         modem.transmit(config.serverChannel, config.serverChannel, {
