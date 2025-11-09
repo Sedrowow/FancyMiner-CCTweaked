@@ -344,7 +344,7 @@ local function deploy()
     print("Deployer will mine zone " .. #state.zones)
     print("Zone: X=" .. deployerZone.xmin .. "-" .. deployerZone.xmax .. ", Z=" .. deployerZone.zmin .. "-" .. deployerZone.zmax)
     print("Moving to zone starting position...")
-    dig.goto(deployerZone.xmin, 0, 0, 0)
+    dig.goto(deployerZone.xmin, -1, 0, 0)
     print("Arrived at zone " .. #state.zones .. " starting position")
     
     -- Notify server that deployment is complete
