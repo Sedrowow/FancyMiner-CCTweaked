@@ -1036,6 +1036,12 @@ function gotoy(y)
     return
   end
   
+  -- SAFETY: Prevent navigation to Y=1 or above to protect chests
+  if y > 0 then
+    error("SAFETY: Cannot navigate to Y=" .. tostring(y) .. " (Y > 0). Chests are at Y=1!", 2)
+    return false
+  end
+  
   -- Add skip depth validation
   if type(skip) == "number" and y > -skip then
     y = -skip -- Don't go above skip depth
@@ -1156,6 +1162,13 @@ function goto(x,y,z,r,lm)
   if #x >= 17 then blocks_processed_total = x[17] end -- Added
   x = x[1]
   end
+  
+  -- SAFETY: Validate Y coordinate before any navigation
+  if y ~= nil and y > 0 then
+    error("SAFETY: Cannot navigate to Y=" .. tostring(y) .. " (Y > 0). Chests are at Y=1!", 2)
+    return false
+  end
+  
   gotox(x or 0)
   gotoz(z or 0)
   gotor(r or 0)

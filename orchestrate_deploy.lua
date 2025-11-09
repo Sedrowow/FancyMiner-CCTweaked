@@ -62,16 +62,16 @@ local function ensureFuel()
     local currentX, currentY, currentZ = dig.getx(), dig.gety(), dig.getz()
     local currentR = dig.getr()
     
-    -- Navigate to fuel chest (X+1, Y+1 from start)
-    dig.goto(1, 1, 0, 0)
-    dig.gotor(270) -- Face west toward chest
+    -- Navigate to fuel chest position at ground level (X+1, Y+0)
+    dig.goto(1, 0, 0, 0) -- Stay at Y=0
+    dig.gotor(0) -- Face north
     
-    -- Pull fuel from chest to fill slot 1
+    -- Pull fuel from chest above
     turtle.select(1)
     local stackLimit = turtle.getItemSpace(1)
     
     while turtle.getItemCount(1) < stackLimit do
-        if not turtle.suck(1) then
+        if not turtle.suckUp(1) then
             -- No more fuel available in chest
             break
         end
@@ -221,13 +221,13 @@ local function deploy()
         end
     end
     
-    -- Place output chest directly above starting position
+    -- Place both chests at Y+1 level, turtle stays at Y=0
     print("\nPlacing output chest...")
-    dig.up() -- Move up
     turtle.select(3) -- Output chest in slot 3
-    if not turtle.placeDown() then
+    if not turtle.placeUp() then
         error("Failed to place output chest - ensure chest is in slot 3")
     end
+    -- Output chest now at (0, 1, 0), turtle still at (0, 0, 0)
     
     local outputGPS = {
         x = state.startGPS.x,
@@ -236,13 +236,15 @@ local function deploy()
     }
     state.chestPositions.output = outputGPS
     
-    -- Place fuel chest one space east and at same level
+    -- Move east and place fuel chest at same level
     print("Placing fuel chest...")
     dig.gotor(90) -- Face east
-    turtle.select(2) -- Chest in slot 2
-    if not turtle.place() then
+    dig.fwd() -- Move to (1, 0, 0)
+    turtle.select(2) -- Fuel chest in slot 2
+    if not turtle.placeUp() then
         error("Failed to place fuel chest - ensure chest is in slot 2")
     end
+    -- Fuel chest now at (1, 1, 0), turtle at (1, 0, 0)
     
     local fuelGPS = {
         x = state.startGPS.x + 1,
@@ -251,10 +253,9 @@ local function deploy()
     }
     state.chestPositions.fuel = fuelGPS
     
-    -- Return to ground level at starting position
-    dig.gotor(270) -- Face west
-    dig.fwd() -- Move back over start
-    dig.down() -- Go down to ground level
+    -- Return to starting position
+    dig.gotor(180) -- Face west
+    dig.fwd() -- Move back to (0, 0, 0)
     dig.gotor(0) -- Face north
     
     -- Report chest positions and starting GPS to server
@@ -273,13 +274,13 @@ local function deploy()
     print("\n=== Waiting for fuel ===")
     print("Please place fuel in the fuel chest")
     
-    dig.goto(1, 1, 0, 0) -- Move to fuel chest position (X+1, Y+1)
-    dig.gotor(270) -- Face west toward chest
+    dig.goto(1, 0, 0, 0) -- Move to position under fuel chest
+    dig.gotor(0) -- Face north
     
-    -- Wait until fuel is detected in chest
+    -- Wait until fuel is detected in chest above
     turtle.select(1)
     while true do
-        if turtle.suck(1) then
+        if turtle.suckUp(1) then
             print("Fuel detected! Proceeding with deployment...")
             break
         end
@@ -328,13 +329,13 @@ local function deploy()
     
     if fuelCount < 8 then
         print("Getting fuel for self...")
-        dig.goto(1, 1, 0, 0)
-        dig.gotor(270)
+        dig.goto(1, 0, 0, 0) -- Move to position under fuel chest
+        dig.gotor(0) -- Face north
         turtle.select(1)
         
         local stackLimit = turtle.getItemSpace(1)
         while turtle.getItemCount(1) < stackLimit do
-            if not turtle.suck(1) then
+            if not turtle.suckUp(1) then
                 if turtle.getItemCount(1) >= 8 then
                     break -- Have enough even if not full
                 end
