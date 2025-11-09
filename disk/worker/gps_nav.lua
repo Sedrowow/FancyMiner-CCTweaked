@@ -11,7 +11,8 @@ local function getGPS(retries)
     for i = 1, retries do
         local x, y, z = gps.locate(5)
         if x then
-            return {x = math.floor(x + 0.5), y = math.floor(y + 0.5), z = math.floor(z + 0.5)}
+            -- Return raw GPS coordinates without rounding
+            return {x = x, y = y, z = z}
         end
         sleep(0.5)
     end
