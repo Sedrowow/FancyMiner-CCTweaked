@@ -175,7 +175,7 @@ local function setupFirmwareDisk()
     print("Downloading firmware files...")
     
     local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/disk/worker/"
-    local files = {"bootstrap.lua", "quarry.lua", "dig.lua", "flex.lua"}
+    local files = {"bootstrap.lua", "quarry.lua", "dig.lua", "flex.lua", "gps_nav.lua"}
     
     for _, filename in ipairs(files) do
         print("Downloading " .. filename .. "...")
