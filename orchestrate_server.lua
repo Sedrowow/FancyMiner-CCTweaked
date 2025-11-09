@@ -473,8 +473,8 @@ local function handleMessage(message)
         -- Worker acknowledged receiving a file
         print("Turtle " .. message.turtle_id .. " received " .. message.filename)
         
-    elseif message.type == "firmware_complete" then
-        -- Worker has all firmware files, match to zone by GPS position
+    elseif message.type == "ready_for_assignment" then
+        -- Worker is ready and listening for zone assignment, match to zone by GPS position
         local turtleID = message.turtle_id
         local workerGPS = message.gps_position
         
@@ -483,7 +483,7 @@ local function handleMessage(message)
             return
         end
         
-        print("Turtle " .. turtleID .. " at GPS (" .. workerGPS.x .. ", " .. workerGPS.y .. ", " .. workerGPS.z .. "), finding matching zone...")
+        print("Turtle " .. turtleID .. " ready at GPS (" .. workerGPS.x .. ", " .. workerGPS.y .. ", " .. workerGPS.z .. "), assigning zone...")
         
         -- Find zone that contains this worker's GPS position
         if state.zones and state.gpsZones then
@@ -513,10 +513,14 @@ local function handleMessage(message)
                         zone_index = i,
                         zone = state.zones[i],
                         gps_zone = gpsZone,
+                        chest_gps = {
+                            fuel = state.chestPositions.fuel,
+                            output = state.chestPositions.output
+                        },
                         server_channel = SERVER_CHANNEL
                     })
                     
-                    print("  Matched to zone " .. i .. " (X: " .. state.zones[i].xmin .. "-" .. state.zones[i].xmax .. ")")
+                    print("  Assigned zone " .. i .. " (X: " .. state.zones[i].xmin .. "-" .. state.zones[i].xmax .. ")")
                     saveState()
                     break
                 end

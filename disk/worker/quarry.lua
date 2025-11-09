@@ -373,6 +373,19 @@ local function initializeWorker()
     modem.open(config.serverChannel)
     print("Listening on server channel: " .. config.serverChannel)
     
+    -- Get GPS position and notify server we're ready for assignment
+    local currentGPS = getGPS(5)
+    if not currentGPS then
+        error("Failed to get GPS position for zone matching")
+    end
+    
+    print("Notifying server we're ready for assignment...")
+    modem.transmit(config.serverChannel, config.serverChannel, {
+        type = "ready_for_assignment",
+        turtle_id = config.turtleID,
+        gps_position = currentGPS
+    })
+    
     local initTimeout = os.startTimer(120) -- 2 minute timeout
     local gotAssignment = false
     
