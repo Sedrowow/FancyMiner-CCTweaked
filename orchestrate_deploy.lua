@@ -161,9 +161,9 @@ local function deploy()
     modem.open(SERVER_CHANNEL)
     modem.open(BROADCAST_CHANNEL)
     
-    -- Count available turtles
+    -- Count available turtles (slots 4-16, slots 1-3 are for fuel/chests)
     local turtleSlots = {}
-    for slot = 3, 16 do
+    for slot = 4, 16 do
         local detail = turtle.getItemDetail(slot)
         if detail and detail.name:find("turtle") then
             table.insert(turtleSlots, slot)

@@ -37,7 +37,7 @@ while not serverDiscovered do
         -- Re-broadcast
         broadcastTimer = os.startTimer(2)
     elseif event == "modem_message" then
-        local side, channel, replyChannel, message = p1, p2, p3, p4
+        local side, channel, replyChannel, message, distance = p1, p2, p3, p4, p5
         
         if type(message) == "table" and message.type == "server_response" then
             if message.turtle_id == turtleID then

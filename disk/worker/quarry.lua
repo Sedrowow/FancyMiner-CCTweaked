@@ -216,12 +216,13 @@ local function requestResourceAccess(resourceType)
     local approachDir = nil
     
     while not granted do
-        local event, p1, p2, p3, message = os.pullEvent()
+        local event, p1, p2, p3, p4, p5 = os.pullEvent()
         
         if event == "timer" and p1 == timeout then
             print("Timeout waiting for " .. resourceType .. " access")
             return false
         elseif event == "modem_message" then
+            local side, channel, replyChannel, message, distance = p1, p2, p3, p4, p5
             if type(message) == "table" then
                 if message.type == "resource_granted" and 
                    message.turtle_id == config.turtleID and
@@ -347,11 +348,12 @@ local function initializeWorker()
     local gotAssignment = false
     
     while not gotAssignment do
-        local event, p1, p2, p3, message = os.pullEvent()
+        local event, p1, p2, p3, p4, p5 = os.pullEvent()
         
         if event == "timer" and p1 == initTimeout then
             error("Timeout waiting for initialization")
         elseif event == "modem_message" then
+            local side, channel, replyChannel, message, distance = p1, p2, p3, p4, p5
             if type(message) == "table" then
                 if message.type == "file_chunk_broadcast" then
                     -- Receive firmware file chunk
@@ -430,7 +432,7 @@ local function initializeWorker()
     -- Wait for start signal
     print("Waiting for start signal...")
     while true do
-        local event, p1, p2, p3, message = os.pullEvent("modem_message")
+        local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
         if type(message) == "table" and message.type == "start_mining" then
             print("Start signal received!")
             sendStatusUpdate("mining")
