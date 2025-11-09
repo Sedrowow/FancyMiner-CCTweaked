@@ -262,12 +262,12 @@ local function deploy()
         start_gps = state.startGPS
     })
     
-    print(\"Chests placed and registered with server\")
-    print(\"Server will load firmware from its disk drive\")
+    print("Chests placed and registered with server")
+    print("Server will load firmware from its disk drive")
     
     -- Wait for fuel to be placed in fuel chest
-    print(\"\\n=== Waiting for fuel ===\")
-    print(\"Please place fuel in the fuel chest\")
+    print("\n=== Waiting for fuel ===")
+    print("Please place fuel in the fuel chest")
     
     dig.goto(1, 1, 0, 0) -- Move to fuel chest position (X+1, Y+1)
     dig.gotor(270) -- Face west toward chest
@@ -285,7 +285,7 @@ local function deploy()
     -- Return to start position
     dig.goto(0, 0, 0, 0)
     
-    print(\"\\nReady to deploy workers...\")
+    print("\nReady to deploy workers...")
     
     -- Deploy each worker turtle
     print("\n=== Deploying Workers ===\n")
