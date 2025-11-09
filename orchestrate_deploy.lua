@@ -108,6 +108,12 @@ local function deployWorker(slot, zone, zoneIndex)
     print("Moving to deployment position for zone " .. zoneIndex)
     dig.goto(zone.xmin, 0, 0, 0)
     
+    -- Mine out the block below to ensure space for turtle placement at Y=-1
+    if turtle.detectDown() then
+        print("Mining out block below for turtle placement...")
+        turtle.digDown()
+    end
+    
     -- Place turtle
     turtle.select(slot)
     if not turtle.placeDown() then
@@ -306,24 +312,8 @@ local function deploy()
         end
     end
     
-    -- Wait for workers to boot and connect to server
-    print("\nWaiting for workers to initialize...")
-    print("Workers will broadcast online status to server...")
-    print("Server will respond with firmware and zone assignments...")
-    sleep(2)
-    
-    -- Notify server that deployment is complete
-    print("Notifying server of deployment completion...")
-    modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
-        type = "deployment_complete",
-        deployer_id = state.deployerID
-    })
-    
-    print("\n=== Deployment Complete ===")
-    print("Workers deployed: " .. #state.deployedWorkers)
-    
-    -- Verify we have fuel before becoming a worker
-    print("\n=== Preparing to Transition to Worker Mode ===")
+    -- Ensure deployer has fuel before moving to worker position
+    print("\n=== Preparing Deployer for Worker Mode ===")
     turtle.select(1)
     local fuelCount = turtle.getItemCount(1)
     
@@ -348,19 +338,27 @@ local function deploy()
         print("Fueled successfully with " .. turtle.getItemCount(1) .. " fuel")
     end
     
-    print("\n=== Transitioning to Worker Mode ===\n")
-    
-    -- Deployer gets the last zone
+    -- Deployer gets the last zone - navigate there before signaling completion
     local deployerZone = state.zones[#state.zones]
+    print("\n=== Moving to Deployer's Worker Position ===")
     print("Deployer will mine zone " .. #state.zones)
     print("Zone: X=" .. deployerZone.xmin .. "-" .. deployerZone.xmax .. ", Z=" .. deployerZone.zmin .. "-" .. deployerZone.zmax)
-    
-    -- Navigate to deployer's zone starting position
-    print("\nMoving to zone starting position...")
+    print("Moving to zone starting position...")
     dig.goto(deployerZone.xmin, 0, 0, 0)
     print("Arrived at zone " .. #state.zones .. " starting position")
     
-    print("\nStarting worker bootstrap process...")
+    -- Notify server that deployment is complete
+    print("\nNotifying server of deployment completion...")
+    modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
+        type = "deployment_complete",
+        deployer_id = state.deployerID
+    })
+    
+    print("\n=== Deployment Complete ===")
+    print("Workers deployed: " .. #turtleSlots)
+    
+    print("\n=== Transitioning to Worker Mode ===\n")
+    print("Starting worker bootstrap process...")
     print("Deployer will now operate as a worker turtle")
     sleep(1)
 end

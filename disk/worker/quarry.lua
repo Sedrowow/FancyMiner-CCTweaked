@@ -311,10 +311,27 @@ local function queuedResourceAccess(resourceType)
     elseif resourceType == "fuel" then
         -- Fuel chest is above at Y=1, access from below at Y=0
         turtle.select(1)
+        
+        -- Suck up fuel items
         while turtle.suckUp() do
             sleep(0.05)
         end
-        dig.refuel(turtle.getFuelLevel() * 2)
+        
+        -- Refuel to maximum capacity, keeping 64 items in slot 1
+        local fuelLimit = turtle.getFuelLimit()
+        while turtle.getFuelLevel() < fuelLimit and turtle.getItemCount(1) > 64 do
+            turtle.refuel(1)
+        end
+        
+        -- If we're at max fuel but have less than 64 items, try to get more
+        if turtle.getItemCount(1) < 64 then
+            while turtle.suckUp() and turtle.getItemCount(1) < 64 do
+                sleep(0.05)
+            end
+        end
+        
+        print("Refueled to " .. turtle.getFuelLevel() .. "/" .. fuelLimit .. 
+              ", holding " .. turtle.getItemCount(1) .. " fuel items")
     end
     
     print("Operation complete, returning to mining position...")
@@ -451,14 +468,70 @@ local function checkInv()
 end
 
 -- Modified fuel check for coordinated mode
+local fuelThreshold = 1000 -- Will be calculated based on zone distance
+
 local function checkFuel()
     local current = turtle.getFuelLevel()
-    local needed = 1000 -- Configurable threshold
     
-    if current < needed then
-        flex.send("Fuel low, requesting access...", colors.yellow)
-        queuedResourceAccess("fuel")
+    if current < fuelThreshold then
+        -- First try to use reserve fuel in slot 1 (keep at least 1 item to reserve the slot)
+        turtle.select(1)
+        if turtle.getItemCount(1) > 1 and turtle.refuel(0) then
+            -- We have fuel items in slot 1, consume them to reach threshold (keeping 1 item)
+            print("Using reserve fuel from slot 1...")
+            while turtle.getFuelLevel() < fuelThreshold and turtle.getItemCount(1) > 1 do
+                turtle.refuel(1)
+            end
+            print("Refueled from reserve to " .. turtle.getFuelLevel() .. ", " .. turtle.getItemCount(1) .. " items remain")
+        end
+        
+        -- If still below threshold after using reserve, go to chest
+        if turtle.getFuelLevel() < fuelThreshold then
+            flex.send("Fuel low (" .. current .. "/" .. fuelThreshold .. "), requesting access...", colors.yellow)
+            queuedResourceAccess("fuel")
+        end
     end
+end
+
+-- Calculate fuel threshold based on maximum distance from fuel chest
+local function calculateFuelThreshold()
+    if not config.isCoordinated or not config.chestGPS.fuel or not config.gps_zone then
+        return 1000 -- Default fallback
+    end
+    
+    -- Calculate maximum possible distance from fuel chest to any corner of the zone
+    local fuelX = config.chestGPS.fuel.x
+    local fuelY = config.chestGPS.fuel.y
+    local fuelZ = config.chestGPS.fuel.z
+    
+    -- Check all corners of the zone and all Y levels
+    local maxDist = 0
+    local corners = {
+        {config.gps_zone.gps_xmin, config.gps_zone.gps_ymin, config.gps_zone.gps_zmin},
+        {config.gps_zone.gps_xmin, config.gps_zone.gps_ymin, config.gps_zone.gps_zmax},
+        {config.gps_zone.gps_xmax, config.gps_zone.gps_ymin, config.gps_zone.gps_zmin},
+        {config.gps_zone.gps_xmax, config.gps_zone.gps_ymin, config.gps_zone.gps_zmax},
+        {config.gps_zone.gps_xmin, config.gps_zone.gps_ymax, config.gps_zone.gps_zmin},
+        {config.gps_zone.gps_xmin, config.gps_zone.gps_ymax, config.gps_zone.gps_zmax},
+        {config.gps_zone.gps_xmax, config.gps_zone.gps_ymax, config.gps_zone.gps_zmin},
+        {config.gps_zone.gps_xmax, config.gps_zone.gps_ymax, config.gps_zone.gps_zmax}
+    }
+    
+    for _, corner in ipairs(corners) do
+        -- Manhattan distance (since turtle can't move diagonally)
+        local dist = math.abs(corner[1] - fuelX) + 
+                     math.abs(corner[2] - fuelY) + 
+                     math.abs(corner[3] - fuelZ)
+        if dist > maxDist then
+            maxDist = dist
+        end
+    end
+    
+    -- Only need fuel to reach chest (one-way) + safety margin, since we refuel before returning
+    local threshold = maxDist + 50
+    
+    print("Fuel threshold calculated: " .. threshold .. " (max distance to chest: " .. maxDist .. ")")
+    return threshold
 end
 
 -- Check if running as coordinated worker
@@ -471,6 +544,9 @@ end
 if isCoordinatedMode() then
     -- Initialize as coordinated worker
     initializeWorker()
+    
+    -- Calculate fuel threshold based on zone dimensions
+    fuelThreshold = calculateFuelThreshold()
     
     -- Override dig functions to use GPS validation and queuing
     local oldDropNotFuel = dig.dropNotFuel
@@ -497,13 +573,16 @@ if isCoordinatedMode() then
     local lastStatusUpdate = os.clock()
     local statusUpdateInterval = 10 -- Send status every 10 seconds
     
-    -- Wrap dig functions to include periodic status updates and abort checks
+    -- Wrap dig functions to include periodic status updates, fuel checks, and abort checks
     local originalFwd = dig.fwd
     dig.fwd = function()
         -- Check for abort command (non-blocking)
         if config.isCoordinated and config.aborted then
             error("Operation aborted by server")
         end
+        
+        -- Check fuel level before moving
+        checkFuel()
         
         local result = originalFwd()
         

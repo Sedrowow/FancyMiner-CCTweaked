@@ -708,8 +708,6 @@ function up(n)
 
   local x,a,b,t
   for x=1, n do
-    refuel()
-    
     if turtle.detectUp() then
       -- If there's a block above, we need to dig it
       while not turtle.up() do
@@ -743,8 +741,6 @@ function down(n)
 
   local x,a,b,t
   for x=1, n do
-    refuel()
-    
     if turtle.detectDown() then
       -- If there's a block below, we need to dig it
       while not turtle.down() do
@@ -778,8 +774,6 @@ function fwd(n)
 
   local x,a,b,t
   for x=1, n do
-    refuel()
-    
     if turtle.detect() then
       -- If there's a block in front, we need to dig it
       while not turtle.forward() do
