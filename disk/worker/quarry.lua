@@ -97,6 +97,10 @@ local function gpsNavigateTo(targetGPS, approachDir)
         approachGPS.x = targetGPS.x + 1
     elseif approachDir == "west" then
         approachGPS.x = targetGPS.x - 1
+    elseif approachDir == "down" then
+        approachGPS.y = targetGPS.y - 1
+    elseif approachDir == "up" then
+        approachGPS.y = targetGPS.y + 1
     end
     
     -- Navigate to Y level first
@@ -152,7 +156,7 @@ local function gpsNavigateTo(targetGPS, approachDir)
         attempts = attempts + 1
     end
     
-    -- Face the chest
+    -- Face the chest (or position for vertical access)
     if approachDir == "north" then
         dig.gotor(180) -- Face south toward chest
     elseif approachDir == "south" then
@@ -161,6 +165,9 @@ local function gpsNavigateTo(targetGPS, approachDir)
         dig.gotor(270) -- Face west toward chest
     elseif approachDir == "west" then
         dig.gotor(90) -- Face east toward chest
+    elseif approachDir == "down" or approachDir == "up" then
+        -- No specific facing needed for vertical chest access
+        dig.gotor(0) -- Face north by default
     end
     
     return true
@@ -289,11 +296,19 @@ local function queuedResourceAccess(resourceType)
         return
     end
     
-    -- Perform operation
+    -- Perform operation based on approach direction
     if resourceType == "output" then
-        dig.dropNotFuel()
+        -- Output chest is above, access from below
+        turtle.select(1)
+        for slot = 1, 16 do
+            if slot ~= 1 and turtle.getItemCount(slot) > 0 then
+                turtle.select(slot)
+                turtle.dropUp()
+            end
+        end
+        turtle.select(1)
     elseif resourceType == "fuel" then
-        -- Pull fuel from chest
+        -- Fuel chest is to the east, access horizontally from west
         turtle.select(1)
         while turtle.suck() do
             sleep(0.05)

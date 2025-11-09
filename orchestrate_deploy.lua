@@ -220,8 +220,8 @@ local function ensureFuel()
     local currentX, currentY, currentZ = dig.getx(), dig.gety(), dig.getz()
     local currentR = dig.getr()
     
-    -- Navigate to fuel chest (at X+1 from start)
-    dig.goto(1, 0, 0, 0)
+    -- Navigate to fuel chest (X+1, Y+1 from start)
+    dig.goto(1, 1, 0, 0)
     dig.gotor(270) -- Face west toward chest
     
     -- Pull fuel from chest to fill slot 1
@@ -311,9 +311,6 @@ local function deploy()
     state.startGPS = getGPS()
     print("Starting position: " .. textutils.serialize(state.startGPS))
     
-    -- Check for firmware disk
-    local diskPath = checkDisk()
-    
     -- Request deployment parameters from server
     print("\nRequesting deployment parameters from server...")
     print("Enter server channel ID:")
@@ -377,42 +374,49 @@ local function deploy()
         end
     end
     
-    -- Place output chest behind starting position
+    -- Place output chest directly above starting position
     print("\nPlacing output chest...")
-    dig.gotor(180) -- Face backward
-    turtle.select(1) -- Chest should be in slot 1
-    if not turtle.place() then
-        error("Failed to place output chest - ensure chest is in slot 1")
+    dig.up() -- Move up
+    turtle.select(3) -- Output chest in slot 3
+    if not turtle.placeDown() then
+        error("Failed to place output chest - ensure chest is in slot 3")
     end
     
     local outputGPS = {
         x = state.startGPS.x,
-        y = state.startGPS.y,
-        z = state.startGPS.z - 1
+        y = state.startGPS.y + 1,
+        z = state.startGPS.z
     }
     state.chestPositions.output = outputGPS
     
-    -- Place fuel chest to the side
+    -- Place fuel chest one space east and at same level
     print("Placing fuel chest...")
-    dig.gotor(90) -- Face right
-    turtle.select(2) -- Chest should be in slot 2
+    dig.gotor(90) -- Face east
+    turtle.select(2) -- Chest in slot 2
     if not turtle.place() then
         error("Failed to place fuel chest - ensure chest is in slot 2")
     end
     
     local fuelGPS = {
         x = state.startGPS.x + 1,
-        y = state.startGPS.y,
+        y = state.startGPS.y + 1,
         z = state.startGPS.z
     }
     state.chestPositions.fuel = fuelGPS
     
-    -- Report chest positions to server
+    -- Return to ground level at starting position
+    dig.gotor(270) -- Face west
+    dig.fwd() -- Move back over start
+    dig.down() -- Go down to ground level
+    dig.gotor(0) -- Face north
+    
+    -- Report chest positions and starting GPS to server
     dig.gotor(0) -- Face forward
     modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
         type = "chest_positions",
         fuel_gps = fuelGPS,
-        output_gps = outputGPS
+        output_gps = outputGPS,
+        start_gps = state.startGPS
     })
     
     print("Chests placed and registered with server")
@@ -420,9 +424,9 @@ local function deploy()
     -- Wait for fuel to be placed in fuel chest
     print("\n=== Waiting for fuel ===")
     print("Please place fuel in the fuel chest")
-    print("(The chest to the east/right)")
+    print("(The chest one block east and above starting position)")
     
-    dig.goto(1, 0, 0, 0) -- Move to fuel chest position
+    dig.goto(1, 1, 0, 0) -- Move to fuel chest position (X+1, Y+1)
     dig.gotor(270) -- Face west toward chest
     
     -- Wait until fuel is detected in chest
@@ -438,14 +442,8 @@ local function deploy()
     -- Return to start position
     dig.goto(0, 0, 0, 0)
     
-    -- Load firmware from disk
-    print("\nLoading firmware from disk...")
-    local firmware = {
-        ["quarry.lua"] = readDiskFile(diskPath, "quarry.lua"),
-        ["dig.lua"] = readDiskFile(diskPath, "dig.lua"),
-        ["flex.lua"] = readDiskFile(diskPath, "flex.lua")
-    }
-    print("Firmware loaded successfully")
+    print("\nReady to deploy workers...")
+    print("Firmware will be broadcast by orchestration server")
     
     -- Deploy each worker turtle
     print("\n=== Deploying Workers ===\n")
@@ -469,60 +467,14 @@ local function deploy()
         end
     end
     
-    -- Wait a moment for workers to boot
+    -- Wait for workers to boot and connect to server
     print("\nWaiting for workers to initialize...")
+    print("Workers will broadcast online status to server...")
+    print("Server will respond with firmware and zone assignments...")
     sleep(2)
     
-    -- Broadcast firmware to all deployed workers
-    -- Workers will identify themselves and request their specific zone assignment
-    print("\nBroadcasting firmware files...")
-    
-    for i, worker in ipairs(state.deployedWorkers) do
-        -- Broadcast zone info so worker can identify if it's theirs
-        local zoneMsg = {
-            type = "zone_assignment",
-            zone_index = i,
-            zone = worker.zone,
-            gps_zone = worker.gps_zone,
-            chest_gps = {
-                fuel = {
-                    x = fuelGPS.x,
-                    y = fuelGPS.y,
-                    z = fuelGPS.z,
-                    approach = "north"
-                },
-                output = {
-                    x = outputGPS.x,
-                    y = outputGPS.y,
-                    z = outputGPS.z,
-                    approach = "south"
-                }
-            },
-            server_channel = SERVER_CHANNEL
-        }
-        
-        modem.transmit(BROADCAST_CHANNEL, SERVER_CHANNEL, zoneMsg)
-        sleep(0.5)
-    end
-    
-    -- Broadcast firmware files
-    for filename, content in pairs(firmware) do
-        print("Broadcasting " .. filename .. "...")
-        local chunks = createChunks(content)
-        
-        for i, chunk in ipairs(chunks) do
-            modem.transmit(BROADCAST_CHANNEL, SERVER_CHANNEL, {
-                type = "file_chunk_broadcast",
-                filename = filename,
-                chunk_num = i,
-                total_chunks = #chunks,
-                data = chunk
-            })
-            sleep(0.1)
-        end
-    end
-    
     -- Notify server that deployment is complete
+    print("Notifying server of deployment completion...")
     modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
         type = "deployment_complete",
         deployer_id = state.deployerID
@@ -538,7 +490,7 @@ local function deploy()
     
     if fuelCount < 8 then
         print("Getting fuel for self...")
-        dig.goto(1, 0, 0, 0)
+        dig.goto(1, 1, 0, 0)
         dig.gotor(270)
         turtle.select(1)
         

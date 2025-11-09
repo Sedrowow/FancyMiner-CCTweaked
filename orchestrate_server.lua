@@ -1,9 +1,10 @@
 -- Orchestration Server for Multi-Turtle Quarry System
 -- Runs on a central computer to coordinate multiple mining turtles
--- Manages zone assignments, resource access queues, and worker lifecycle
+-- Manages zone assignments, resource access queues, worker lifecycle, and firmware distribution
 
 local SERVER_CHANNEL = os.getComputerID()
 local BROADCAST_CHANNEL = 65535
+local CHUNK_SIZE = 32768 -- 32KB chunks for file transfer
 
 local state = {
     workers = {}, -- [turtle_id] = {zone, status, lastUpdate}
@@ -22,7 +23,11 @@ local state = {
     miningStarted = false,
     completedCount = 0,
     aborted = false,
-    abortAckCount = 0
+    abortAckCount = 0,
+    firmwareCache = nil, -- Cached firmware files
+    firmwareRequests = {}, -- Track which workers requested firmware
+    zones = nil, -- Zone definitions (relative coordinates)
+    gpsZones = nil -- GPS zones with assignment tracking
 }
 
 local STATE_FILE = "orchestrate_state.cfg"
@@ -215,6 +220,99 @@ local function loadState()
     return false
 end
 
+-- Check for floppy disk and required firmware files
+local function checkDisk()
+    local drive = peripheral.find("drive")
+    if not drive then
+        error("No disk drive found! Server requires a floppy disk with firmware.")
+    end
+    
+    if not drive.isDiskPresent() then
+        error("No disk in drive! Insert disk with worker firmware.")
+    end
+    
+    local diskPath = drive.getMountPath()
+    local requiredFiles = {
+        diskPath .. "/worker/quarry.lua",
+        diskPath .. "/worker/dig.lua",
+        diskPath .. "/worker/flex.lua"
+    }
+    
+    for _, file in ipairs(requiredFiles) do
+        if not fs.exists(file) then
+            error("Missing required file: " .. file)
+        end
+    end
+    
+    print("Disk check passed - all firmware files found")
+    return diskPath
+end
+
+-- Read file from disk
+local function readDiskFile(diskPath, filename)
+    local fullPath = diskPath .. "/worker/" .. filename
+    local file = fs.open(fullPath, "r")
+    if not file then
+        error("Failed to open " .. fullPath)
+    end
+    local content = file.readAll()
+    file.close()
+    return content
+end
+
+-- Split content into chunks for transmission
+local function createChunks(content)
+    local chunks = {}
+    local pos = 1
+    while pos <= #content do
+        table.insert(chunks, content:sub(pos, pos + CHUNK_SIZE - 1))
+        pos = pos + CHUNK_SIZE
+    end
+    return chunks
+end
+
+-- Load firmware into cache
+local function loadFirmware(diskPath)
+    print("\nLoading firmware files into cache...")
+    
+    state.firmwareCache = {
+        ["quarry.lua"] = readDiskFile(diskPath, "quarry.lua"),
+        ["dig.lua"] = readDiskFile(diskPath, "dig.lua"),
+        ["flex.lua"] = readDiskFile(diskPath, "flex.lua")
+    }
+    
+    print("Firmware cached and ready for distribution")
+end
+
+-- Send firmware to a specific worker
+local function sendFirmwareToWorker(turtleID)
+    if not state.firmwareCache then
+        print("Error: Firmware not loaded!")
+        return
+    end
+    
+    print("Sending firmware to turtle " .. turtleID .. "...")
+    
+    for filename, content in pairs(state.firmwareCache) do
+        print("  Sending " .. filename .. "...")
+        local chunks = createChunks(content)
+        
+        for i, chunk in ipairs(chunks) do
+            modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
+                type = "file_chunk",
+                turtle_id = turtleID,
+                filename = filename,
+                chunk_num = i,
+                total_chunks = #chunks,
+                data = chunk
+            })
+            sleep(0.05) -- Small delay between chunks
+        end
+    end
+    
+    print("Firmware sent to turtle " .. turtleID)
+end
+
 -- Calculate zone assignments based on quarry dimensions
 local function calculateZones(width, length, depth, skip, numWorkers)
     local zones = {}
@@ -253,7 +351,7 @@ local function grantNextResource(resourceType)
         state[lockKey] = nextTurtle
         
         local chestPos = state.chestPositions[resourceType]
-        local approachDir = (resourceType == "output") and "south" or "north"
+        local approachDir = (resourceType == "output") and "down" or "west"
         
         modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
             type = "resource_granted",
@@ -286,6 +384,9 @@ local function handleMessage(message)
             message.num_workers
         )
         
+        -- Store zones with GPS boundaries (will be calculated after chest placement)
+        state.zones = zones
+        
         modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
             type = "deploy_command",
             deployer_id = message.deployer_id,
@@ -296,18 +397,99 @@ local function handleMessage(message)
         })
         
         print("Deployment initiated for " .. message.num_workers .. " workers")
+        print("Calculated " .. #zones .. " zones")
         saveState()
         updateDisplay()
         
     elseif message.type == "chest_positions" then
-        -- Deployer reporting chest locations
+        -- Deployer reporting chest locations and starting GPS
         state.chestPositions.fuel = message.fuel_gps
         state.chestPositions.output = message.output_gps
+        local startGPS = message.start_gps
+        
         print("Chest positions registered")
         print("Fuel: " .. textutils.serialize(message.fuel_gps))
         print("Output: " .. textutils.serialize(message.output_gps))
+        print("Start: " .. textutils.serialize(startGPS))
+        
+        -- Calculate GPS zones from relative zones
+        state.gpsZones = {}
+        for i, zone in ipairs(state.zones) do
+            state.gpsZones[i] = {
+                gps_xmin = startGPS.x + zone.xmin,
+                gps_xmax = startGPS.x + zone.xmax,
+                gps_zmin = startGPS.z + zone.zmin,
+                gps_zmax = startGPS.z + zone.zmax,
+                gps_ymin = startGPS.y + zone.ymin,
+                gps_ymax = startGPS.y + zone.ymax,
+                assigned = false
+            }
+        end
+        print("GPS zones calculated")
+        
         saveState()
         updateDisplay()
+        
+        -- Load firmware into cache (ready for worker requests)
+        local diskPath = checkDisk()
+        loadFirmware(diskPath)
+        
+    elseif message.type == "worker_online" then
+        -- Worker broadcasting that it's online and ready
+        local turtleID = message.turtle_id
+        
+        -- Only respond if we have firmware loaded and haven't sent to this worker yet
+        if state.firmwareCache and not state.firmwareRequests[turtleID] then
+            print("Worker " .. turtleID .. " online, sending server info...")
+            
+            -- Send server channel response
+            modem.transmit(BROADCAST_CHANNEL, SERVER_CHANNEL, {
+                type = "server_response",
+                turtle_id = turtleID,
+                server_channel = SERVER_CHANNEL
+            })
+            
+            -- Mark that we're handling this worker
+            state.firmwareRequests[turtleID] = true
+            
+            -- Send firmware after a brief delay
+            sleep(0.5)
+            sendFirmwareToWorker(turtleID)
+        end
+        
+    elseif message.type == "file_received" then
+        -- Worker acknowledged receiving a file
+        print("Turtle " .. message.turtle_id .. " received " .. message.filename)
+        
+    elseif message.type == "firmware_complete" then
+        -- Worker has all firmware files, now assign zone
+        local turtleID = message.turtle_id
+        print("Turtle " .. turtleID .. " has all firmware, assigning zone...")
+        
+        -- Find an unassigned zone for this worker
+        if state.zones and state.gpsZones then
+            for i = 1, #state.zones do
+                if not state.gpsZones[i].assigned then
+                    -- Assign this zone to this turtle
+                    state.gpsZones[i].assigned = true
+                    state.gpsZones[i].turtle_id = turtleID
+                    
+                    -- Send zone assignment
+                    modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
+                        type = "zone_assignment",
+                        turtle_id = turtleID,
+                        zone_index = i,
+                        zone = state.zones[i],
+                        gps_zone = state.gpsZones[i],
+                        server_channel = SERVER_CHANNEL
+                    })
+                    
+                    print("  Assigned zone " .. i .. " (X: " .. state.zones[i].xmin .. "-" .. state.zones[i].xmax .. ") to turtle " .. turtleID)
+                    saveState()
+                    break
+                end
+            end
+        end
         
     elseif message.type == "worker_ready" then
         -- Worker finished initialization
@@ -340,7 +522,7 @@ local function handleMessage(message)
             state[lockKey] = message.turtle_id
             
             local chestPos = state.chestPositions[resourceType]
-            local approachDir = (resourceType == "output") and "south" or "north"
+            local approachDir = (resourceType == "output") and "down" or "west"
             
             modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
                 type = "resource_granted",
@@ -449,7 +631,8 @@ local function handleMessage(message)
         
     elseif message.type == "deployment_complete" then
         -- Deployer finished placing all workers
-        print("Deployment complete - waiting for workers to initialize")
+        print("Deployment complete - all workers placed")
+        print("Waiting for workers to come online and download firmware...")
         saveState()
         updateDisplay()
         

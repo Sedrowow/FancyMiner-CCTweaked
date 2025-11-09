@@ -2,10 +2,10 @@
 -- This minimal program receives firmware from deployer and starts the worker
 
 local BROADCAST_CHANNEL = 65535
+local SERVER_CHANNEL = nil
 local turtleID = os.getComputerID()
 
 print("Worker Bootstrap - ID: " .. turtleID)
-print("Waiting for firmware...")
 
 -- Find and open modem
 local modem = peripheral.find("ender_modem")
@@ -18,6 +18,41 @@ if not modem then
 end
 
 modem.open(BROADCAST_CHANNEL)
+
+-- Broadcast that we're online and wait for server response
+print("Broadcasting online status...")
+local serverDiscovered = false
+local broadcastTimer = os.startTimer(2) -- Broadcast every 2 seconds
+
+while not serverDiscovered do
+    -- Broadcast we're online
+    modem.transmit(BROADCAST_CHANNEL, BROADCAST_CHANNEL, {
+        type = "worker_online",
+        turtle_id = turtleID
+    })
+    
+    local event, p1, p2, p3, p4 = os.pullEvent()
+    
+    if event == "timer" and p1 == broadcastTimer then
+        -- Re-broadcast
+        broadcastTimer = os.startTimer(2)
+    elseif event == "modem_message" then
+        local side, channel, replyChannel, message = p1, p2, p3, p4
+        
+        if type(message) == "table" and message.type == "server_response" then
+            if message.turtle_id == turtleID then
+                SERVER_CHANNEL = message.server_channel
+                serverDiscovered = true
+                os.cancelTimer(broadcastTimer)
+                print("Server connected: Channel " .. SERVER_CHANNEL)
+            end
+        end
+    end
+end
+
+-- Open server channel for firmware reception
+modem.open(SERVER_CHANNEL)
+print("Waiting for firmware...")
 
 -- File reception state
 local fileChunks = {}
@@ -36,11 +71,12 @@ local function checkAllFilesReceived()
 end
 
 -- Main reception loop
+print("Waiting for firmware...")
 while not allFilesReceived do
     local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
     
     if type(message) == "table" then
-        if message.type == "file_chunk_broadcast" then
+        if message.type == "file_chunk" then
             local filename = message.filename
             
             -- Only process files we need
@@ -79,11 +115,25 @@ while not allFilesReceived do
                     filesReceived[filename] = true
                     print("Received: " .. filename .. " (" .. #content .. " bytes)")
                     
+                    -- Acknowledge receipt to server
+                    modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
+                        type = "file_received",
+                        turtle_id = turtleID,
+                        filename = filename
+                    })
+                    
                     -- Check if all files received
                     allFilesReceived = checkAllFilesReceived()
                     
                     if allFilesReceived then
                         print("\nAll firmware received!")
+                        
+                        -- Notify server that we're ready
+                        modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
+                            type = "firmware_complete",
+                            turtle_id = turtleID
+                        })
+                        
                         break
                     end
                 end
