@@ -45,6 +45,11 @@ while not serverDiscovered do
                 serverDiscovered = true
                 os.cancelTimer(broadcastTimer)
                 print("Server connected: Channel " .. SERVER_CHANNEL)
+                
+                -- Save server channel for quarry.lua to use
+                local file = fs.open("server_channel.txt", "w")
+                file.writeLine(tostring(SERVER_CHANNEL))
+                file.close()
             end
         end
     end

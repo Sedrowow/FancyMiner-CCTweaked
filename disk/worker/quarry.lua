@@ -32,10 +32,6 @@ end
 
 print("Worker Turtle ID: " .. config.turtleID)
 
--- File reception state
-local fileChunks = {}
-local filesReceived = {}
-
 -- GPS functions
 local function getGPS(retries)
     retries = retries or 3
@@ -357,9 +353,25 @@ end
 -- Initialize worker - receive firmware and zone assignment
 local function initializeWorker()
     print("\n=== Worker Initialization ===")
-    print("Waiting for firmware and zone assignment...")
+    print("Waiting for zone assignment...")
     
     modem.open(config.broadcastChannel)
+    
+    -- Read server channel from file saved by bootstrap
+    if not fs.exists("server_channel.txt") then
+        error("Server channel file not found! Worker must be initialized by bootstrap.")
+    end
+    
+    local file = fs.open("server_channel.txt", "r")
+    config.serverChannel = tonumber(file.readLine())
+    file.close()
+    
+    if not config.serverChannel then
+        error("Invalid server channel")
+    end
+    
+    modem.open(config.serverChannel)
+    print("Listening on server channel: " .. config.serverChannel)
     
     local initTimeout = os.startTimer(120) -- 2 minute timeout
     local gotAssignment = false
@@ -368,48 +380,11 @@ local function initializeWorker()
         local event, p1, p2, p3, p4, p5 = os.pullEvent()
         
         if event == "timer" and p1 == initTimeout then
-            error("Timeout waiting for initialization")
+            error("Timeout waiting for zone assignment")
         elseif event == "modem_message" then
             local side, channel, replyChannel, message, distance = p1, p2, p3, p4, p5
             if type(message) == "table" then
-                if message.type == "file_chunk_broadcast" then
-                    -- Receive firmware file chunk
-                    local filename = message.filename
-                    if not fileChunks[filename] then
-                        fileChunks[filename] = {}
-                    end
-                    
-                    fileChunks[filename][message.chunk_num] = message.data
-                    
-                    -- Check if file is complete
-                    local complete = true
-                    for i = 1, message.total_chunks do
-                        if not fileChunks[filename][i] then
-                            complete = false
-                            break
-                        end
-                    end
-                    
-                    if complete and not filesReceived[filename] then
-                        -- Reassemble and write file
-                        local content = table.concat(fileChunks[filename])
-                        local file = fs.open(filename, "w")
-                        file.write(content)
-                        file.close()
-                        
-                        filesReceived[filename] = true
-                        print("Received: " .. filename)
-                        
-                        -- Acknowledge receipt
-                        modem.transmit(config.serverChannel or config.broadcastChannel, 
-                                     config.broadcastChannel, {
-                            type = "file_received",
-                            turtle_id = config.turtleID,
-                            filename = filename
-                        })
-                    end
-                    
-                elseif message.type == "zone_assignment" then
+                if message.type == "zone_assignment" then
                     -- Check if this might be our zone based on GPS
                     local currentGPS = getGPS(5)
                     if currentGPS then
@@ -422,11 +397,8 @@ local function initializeWorker()
                             config.zone = message.zone
                             config.gps_zone = message.gps_zone
                             config.chestGPS = message.chest_gps
-                            config.serverChannel = message.server_channel
                             config.isCoordinated = true
                             config.startGPS = currentGPS
-                            
-                            modem.open(config.serverChannel)
                             
                             print("Zone assignment received!")
                             print("Zone: X=" .. config.zone.xmin .. "-" .. config.zone.xmax)
