@@ -236,7 +236,8 @@ local function checkDisk()
     local requiredFiles = {
         diskPath .. "/worker/quarry.lua",
         diskPath .. "/worker/dig.lua",
-        diskPath .. "/worker/flex.lua"
+        diskPath .. "/worker/flex.lua",
+        diskPath .. "/worker/gps_nav.lua"
     }
     
     for _, file in ipairs(requiredFiles) do
@@ -279,7 +280,8 @@ local function loadFirmware(diskPath)
     state.firmwareCache = {
         ["quarry.lua"] = readDiskFile(diskPath, "quarry.lua"),
         ["dig.lua"] = readDiskFile(diskPath, "dig.lua"),
-        ["flex.lua"] = readDiskFile(diskPath, "flex.lua")
+        ["flex.lua"] = readDiskFile(diskPath, "flex.lua"),
+        ["gps_nav.lua"] = readDiskFile(diskPath, "gps_nav.lua")
     }
     
     print("Firmware cached and ready for distribution")

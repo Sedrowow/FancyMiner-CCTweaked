@@ -4,6 +4,7 @@
 
 os.loadAPI("dig.lua")
 os.loadAPI("flex.lua")
+os.loadAPI("gps_nav.lua")
 
 -- Worker configuration
 local config = {
@@ -270,13 +271,7 @@ local function queuedResourceAccess(resourceType)
     end
     
     -- Save current position
-    local savedPos = {
-        x = dig.getx(),
-        y = dig.gety(),
-        z = dig.getz(),
-        r = dig.getr()
-    }
-    local savedGPS = getGPS(5)
+    local savedPos = gps_nav.getPosition()
     
     -- Validate we're in zone before leaving
     validateInZone()
@@ -290,15 +285,19 @@ local function queuedResourceAccess(resourceType)
     
     print("Access granted, navigating to chest...")
     
-    -- Navigate to chest
-    local navSuccess, err = gpsNavigateTo(chestPos, approachDir)
-    if not navSuccess then
-        print("Navigation failed: " .. tostring(err))
+    -- Navigate to position below the chest using GPS coordinates
+    -- Chests are accessed from one block below to use turtle.suckUp/dropUp
+    local chestGPS = config.chestGPS[resourceType]
+    if not chestGPS then
+        print("Error: Unknown resource type " .. resourceType)
         releaseResource(resourceType)
         return
     end
     
-    -- Perform operation based on approach direction and resource type
+    -- Navigate to position below the chest
+    gps_nav.goto(chestGPS.x, chestGPS.y - 1, chestGPS.z)
+    
+    -- Perform operation
     if resourceType == "output" then
         -- Output chest is above at Y=1, access from below at Y=0
         turtle.select(1)
@@ -309,6 +308,7 @@ local function queuedResourceAccess(resourceType)
             end
         end
         turtle.select(1)
+        print("Inventory dumped")
     elseif resourceType == "fuel" then
         -- Fuel chest is above at Y=1, access from below at Y=0
         turtle.select(1)
@@ -337,8 +337,8 @@ local function queuedResourceAccess(resourceType)
     
     print("Operation complete, returning to mining position...")
     
-    -- Return to saved position using dead reckoning (most accurate)
-    dig.goto(savedPos.x, savedPos.y, savedPos.z, savedPos.r)
+    -- Return to saved position using GPS navigation
+    gps_nav.goto(savedPos.x, savedPos.y, savedPos.z)
     
     -- Validate we're back in zone
     validateInZone()
@@ -411,8 +411,14 @@ local function initializeWorker()
                     config.isCoordinated = true
                     config.startGPS = currentGPS
                     
+                    -- Initialize GPS navigation
+                    gps_nav.init()
+                    
                     print("Zone assignment received!")
                     print("Zone: X=" .. config.zone.xmin .. "-" .. config.zone.xmax)
+                    print("Chest positions (GPS coords):")
+                    print("  Output: (" .. config.chestGPS.output.x .. ", " .. config.chestGPS.output.y .. ", " .. config.chestGPS.output.z .. ")")
+                    print("  Fuel: (" .. config.chestGPS.fuel.x .. ", " .. config.chestGPS.fuel.y .. ", " .. config.chestGPS.fuel.z .. ")")
                     
                     -- Verify we're in the right zone (optional validation)
                     local inZone = currentGPS.x >= message.gps_zone.gps_xmin and

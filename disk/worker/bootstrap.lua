@@ -62,7 +62,7 @@ print("Waiting for firmware...")
 -- File reception state
 local fileChunks = {}
 local filesReceived = {}
-local requiredFiles = {"quarry.lua", "dig.lua", "flex.lua"}
+local requiredFiles = {"quarry.lua", "dig.lua", "flex.lua", "gps_nav.lua"}
 local allFilesReceived = false
 
 -- Function to check if all files are received
@@ -162,6 +162,7 @@ end
 print("\nLoading APIs...")
 os.loadAPI("dig.lua")
 os.loadAPI("flex.lua")
+os.loadAPI("gps_nav.lua")
 
 -- Execute the worker quarry program
 print("Starting worker quarry program...")
