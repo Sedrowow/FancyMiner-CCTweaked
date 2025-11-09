@@ -595,9 +595,10 @@ if coordinatedMode then
     
     -- Quarry mining function
     local function mineQuarry()
-        -- Start at top, mine down layer by layer
+        -- Workers start at dig.lua Y=0 (world Y=-1 where they were placed)
+        -- Mine down layer by layer from Y=0 to Y=-depth
         for y = 0, -depth, -1 do
-            if y < -skip then -- Only mine below skip depth
+            if y <= -skip then -- Only mine at skip depth and below
                 -- Mine current layer in a back-and-forth pattern
                 for z = 0, length - 1 do
                     for x = 0, width - 1 do

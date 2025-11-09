@@ -108,13 +108,16 @@ local function deployWorker(slot, zone, zoneIndex)
     print("Moving to deployment position for zone " .. zoneIndex)
     dig.goto(zone.xmin, 0, 0, 0)
     
+    -- Face south (rotation 180) so workers mine in the correct direction
+    dig.gotor(180)
+    
     -- Mine out the block below to ensure space for turtle placement at Y=-1
     if turtle.detectDown() then
         print("Mining out block below for turtle placement...")
         turtle.digDown()
     end
     
-    -- Place turtle
+    -- Place turtle (will face south like deployer)
     turtle.select(slot)
     if not turtle.placeDown() then
         return false, "Failed to place turtle at zone " .. zoneIndex
@@ -344,7 +347,7 @@ local function deploy()
     print("Deployer will mine zone " .. #state.zones)
     print("Zone: X=" .. deployerZone.xmin .. "-" .. deployerZone.xmax .. ", Z=" .. deployerZone.zmin .. "-" .. deployerZone.zmax)
     print("Moving to zone starting position...")
-    dig.goto(deployerZone.xmin, -1, 0, 0)
+    dig.goto(deployerZone.xmin, -1, 0, 180)
     print("Arrived at zone " .. #state.zones .. " starting position")
     
     -- Notify server that deployment is complete
