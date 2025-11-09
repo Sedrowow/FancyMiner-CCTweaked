@@ -352,7 +352,8 @@ local function grantNextResource(resourceType)
         state[lockKey] = nextTurtle
         
         local chestPos = state.chestPositions[resourceType]
-        local approachDir = (resourceType == "output") and "down" or "west"
+        -- Both chests are at Y=1, workers access from below at Y=0
+        local approachDir = "down"
         
         modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
             type = "resource_granted",

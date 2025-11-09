@@ -297,9 +297,9 @@ local function queuedResourceAccess(resourceType)
         return
     end
     
-    -- Perform operation based on approach direction
+    -- Perform operation based on approach direction and resource type
     if resourceType == "output" then
-        -- Output chest is above, access from below
+        -- Output chest is above at Y=1, access from below at Y=0
         turtle.select(1)
         for slot = 1, 16 do
             if slot ~= 1 and turtle.getItemCount(slot) > 0 then
@@ -309,9 +309,9 @@ local function queuedResourceAccess(resourceType)
         end
         turtle.select(1)
     elseif resourceType == "fuel" then
-        -- Fuel chest is to the east, access horizontally from west
+        -- Fuel chest is above at Y=1, access from below at Y=0
         turtle.select(1)
-        while turtle.suck() do
+        while turtle.suckUp() do
             sleep(0.05)
         end
         dig.refuel(turtle.getFuelLevel() * 2)
@@ -575,24 +575,15 @@ if config.isCoordinated then
     print("Dumping remaining inventory...")
     
     -- Request output chest access to dump remaining items
-    local dumpSuccess = queuedResourceAccess("output", function()
-        -- Dump all remaining items
-        for slot = 1, 16 do
-            if turtle.getItemCount(slot) > 0 then
-                turtle.select(slot)
-                turtle.dropUp()
-            end
-        end
-        print("Inventory dumped")
-    end)
-    
-    if not dumpSuccess then
-        print("Warning: Could not dump final inventory")
-    end
+    -- queuedResourceAccess handles navigation and dumping automatically
+    queuedResourceAccess("output")
     
     -- Return to starting position
     print("Returning to starting position...")
-    dig.goto(config.startPos.x, config.startPos.y, config.startPos.z, 0)
+    if config.startGPS then
+        gpsNavigateTo(config.startGPS, "north")
+    end
+    dig.goto(0, 0, 0, 0)
     print("Arrived at starting position")
     
     -- Send completion message
