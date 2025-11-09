@@ -206,11 +206,55 @@ shell.run("quarry.lua")
 ]]
 
 -- Deploy a single worker turtle
+-- Ensure we have at least 8 fuel in slot 1
+local function ensureFuel()
+    turtle.select(1)
+    local count = turtle.getItemCount(1)
+    
+    if count >= 8 then
+        return true
+    end
+    
+    -- Need more fuel, go get it from fuel chest
+    print("Getting more fuel from chest...")
+    local currentX, currentY, currentZ = dig.getx(), dig.gety(), dig.getz()
+    local currentR = dig.getr()
+    
+    -- Navigate to fuel chest (at X+1 from start)
+    dig.goto(1, 0, 0, 0)
+    dig.gotor(270) -- Face west toward chest
+    
+    -- Pull fuel from chest to fill slot 1
+    turtle.select(1)
+    local stackLimit = turtle.getItemSpace(1)
+    
+    while turtle.getItemCount(1) < stackLimit do
+        if not turtle.suck(1) then
+            -- No more fuel available in chest
+            break
+        end
+    end
+    
+    if turtle.getItemCount(1) < 8 then
+        print("Warning: Could not get enough fuel from chest")
+    end
+    
+    -- Return to previous position
+    dig.goto(currentX, currentY, currentZ, currentR)
+    
+    return turtle.getItemCount(1) >= 8
+end
+
 local function deployWorker(slot, zone, zoneIndex)
     -- Check if slot contains a turtle
     local detail = turtle.getItemDetail(slot)
     if not detail or not detail.name:find("turtle") then
         return false, "No turtle in slot " .. slot
+    end
+    
+    -- Ensure we have fuel to give to worker
+    if not ensureFuel() then
+        return false, "Insufficient fuel to deploy worker " .. zoneIndex
     end
     
     -- Calculate deployment position
@@ -234,9 +278,13 @@ local function deployWorker(slot, zone, zoneIndex)
         return false, "Failed to verify turtle placement"
     end
     
-    -- Inject bootstrap code via disk drive (if available) or direct transfer
-    -- Since we can't directly write to the turtle's filesystem, we'll use a different approach:
-    -- The worker will receive the bootstrap via modem first
+    -- Drop 8 fuel into the placed worker
+    turtle.select(1)
+    if not turtle.dropDown(8) then
+        print("Warning: Failed to fuel worker " .. zoneIndex)
+    else
+        print("Fueled worker " .. zoneIndex .. " with 8 fuel")
+    end
     
     print("Turtle placed at zone " .. zoneIndex)
     return true, slot
@@ -369,6 +417,27 @@ local function deploy()
     
     print("Chests placed and registered with server")
     
+    -- Wait for fuel to be placed in fuel chest
+    print("\n=== Waiting for fuel ===")
+    print("Please place fuel in the fuel chest")
+    print("(The chest to the east/right)")
+    
+    dig.goto(1, 0, 0, 0) -- Move to fuel chest position
+    dig.gotor(270) -- Face west toward chest
+    
+    -- Wait until fuel is detected in chest
+    turtle.select(1)
+    while true do
+        if turtle.suck(1) then
+            print("Fuel detected! Proceeding with deployment...")
+            break
+        end
+        sleep(1)
+    end
+    
+    -- Return to start position
+    dig.goto(0, 0, 0, 0)
+    
     -- Load firmware from disk
     print("\nLoading firmware from disk...")
     local firmware = {
@@ -461,6 +530,33 @@ local function deploy()
     
     print("\n=== Deployment Complete ===")
     print("Workers deployed: " .. #state.deployedWorkers)
+    
+    -- Verify we have fuel before becoming a worker
+    print("\n=== Preparing to Transition to Worker Mode ===")
+    turtle.select(1)
+    local fuelCount = turtle.getItemCount(1)
+    
+    if fuelCount < 8 then
+        print("Getting fuel for self...")
+        dig.goto(1, 0, 0, 0)
+        dig.gotor(270)
+        turtle.select(1)
+        
+        local stackLimit = turtle.getItemSpace(1)
+        while turtle.getItemCount(1) < stackLimit do
+            if not turtle.suck(1) then
+                if turtle.getItemCount(1) >= 8 then
+                    break -- Have enough even if not full
+                end
+                print("Waiting for more fuel...")
+                sleep(1)
+            end
+        end
+        
+        dig.goto(0, 0, 0, 0)
+        print("Fueled successfully with " .. turtle.getItemCount(1) .. " fuel")
+    end
+    
     print("\nWaiting for all workers to report ready...")
     print("Then this turtle will join as a worker.\n")
     
