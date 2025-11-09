@@ -593,10 +593,46 @@ if coordinatedMode then
         end
     end
     
+    -- Quarry mining function
+    local function mineQuarry()
+        -- Start at top, mine down layer by layer
+        for y = 0, -depth, -1 do
+            if y < -skip then -- Only mine below skip depth
+                -- Mine current layer in a back-and-forth pattern
+                for z = 0, length - 1 do
+                    for x = 0, width - 1 do
+                        -- Check fuel and inventory periodically
+                        checkFuel()
+                        checkInv()
+                        
+                        -- Navigate to position
+                        dig.goto(x, y, z, 0)
+                        
+                        -- Block any lava before digging
+                        dig.blockLavaUp()
+                        dig.blockLava() -- forward
+                        dig.blockLavaDown()
+                        
+                        -- Dig at current position if needed
+                        if turtle.detectDown() then
+                            turtle.digDown()
+                        end
+                        
+                        -- Check for lava again after digging
+                        dig.blockLavaDown()
+                    end
+                end
+            end
+        end
+        
+        -- Return to start position after mining
+        dig.goto(0, 0, 0, 0)
+    end
+    
     -- Run the actual quarry operation with abort handling
     local miningSuccess, miningError = pcall(function()
         parallel.waitForAny(
-            function() dig.quarry(width, length, depth, skip) end,
+            mineQuarry,
             abortListener
         )
     end)
