@@ -25,8 +25,8 @@ local config = {
 -- Persistent logging function
 local logFile = "worker_" .. os.getComputerID() .. ".log"
 local function log(message)
-    -- Print to screen
-    log(message)
+    -- Print to screen (use write/print directly, not log)
+    print(message)
     
     -- Append to log file
     local file = fs.open(logFile, "a")
