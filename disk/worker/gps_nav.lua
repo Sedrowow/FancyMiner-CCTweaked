@@ -37,9 +37,9 @@ function updatePosition()
     return currentGPS
 end
 
--- Get current GPS position
+-- Get current GPS position (returns a copy to prevent external modification)
 function getPosition()
-    return currentGPS
+    return {x = currentGPS.x, y = currentGPS.y, z = currentGPS.z}
 end
 
 -- Get starting GPS position
