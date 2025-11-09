@@ -149,9 +149,9 @@ function goto(targetX, targetY, targetZ)
         local deltaX = targetX - currentGPS.x
         local deltaZ = targetZ - currentGPS.z
         
-        -- Check if we've arrived
-        if math.abs(deltaX) < 1 and math.abs(deltaZ) < 1 then
-            print("Arrived at target")
+        -- Check if we've arrived (within 0.1 blocks accounts for GPS rounding)
+        if math.abs(deltaX) <= 0.1 and math.abs(deltaZ) <= 0.1 then
+            print("Arrived at target (GPS: " .. currentGPS.x .. ", " .. currentGPS.y .. ", " .. currentGPS.z .. ")")
             return true
         end
         
