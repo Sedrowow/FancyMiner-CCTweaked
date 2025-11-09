@@ -51,11 +51,15 @@ function getStart()
 end
 
 -- Determine current facing by test movement
+-- Tries all directions if blocked, calculates original facing correctly
 local function detectFacing()
     local gps1 = getGPS(5)
     if not gps1 then
+        print("GPS NAV: detectFacing failed - no GPS")
         return nil
     end
+    
+    print("GPS NAV: detectFacing at " .. textutils.serialize(gps1))
     
     -- Try moving forward first
     if turtle.forward() then
@@ -65,20 +69,24 @@ local function detectFacing()
         if gps2 then
             local dx = gps2.x - gps1.x
             local dz = gps2.z - gps1.z
+            print("GPS NAV: Moved fwd, delta X=" .. string.format("%.2f", dx) .. " Z=" .. string.format("%.2f", dz))
             
+            local direction
             if math.abs(dx) > math.abs(dz) then
-                return (dx > 0) and "east" or "west"
+                direction = (dx > 0) and "east" or "west"
             else
-                return (dz > 0) and "south" or "north"
+                direction = (dz > 0) and "south" or "north"
             end
+            print("GPS NAV: Facing " .. direction)
+            return direction
         end
     end
     
-    -- If blocked forward, try turning and testing each direction
-    local turnsCount = 0
+    -- Blocked forward, try turning and testing
+    print("GPS NAV: Blocked fwd, testing other directions")
+    
     for i = 1, 4 do
-        turtle.turnRight()
-        turnsCount = turnsCount + 1
+        turtle.turnRight()  -- Turn right, updates dig.lua tracking
         
         if turtle.forward() then
             local gps2 = getGPS(5)
@@ -87,25 +95,45 @@ local function detectFacing()
             if gps2 then
                 local dx = gps2.x - gps1.x
                 local dz = gps2.z - gps1.z
+                print("GPS NAV: After " .. i .. " right turns, moved delta X=" .. string.format("%.2f", dx) .. " Z=" .. string.format("%.2f", dz))
                 
-                local direction
+                -- Determine which direction we just moved
+                local movedDirection
                 if math.abs(dx) > math.abs(dz) then
-                    direction = (dx > 0) and "east" or "west"
+                    movedDirection = (dx > 0) and "east" or "west"
                 else
-                    direction = (dz > 0) and "south" or "north"
+                    movedDirection = (dz > 0) and "south" or "north"
                 end
                 
-                -- Turn back to original facing before returning
-                for j = 1, 4 - turnsCount do
+                print("GPS NAV: Moved " .. movedDirection .. " after " .. i .. " turns")
+                
+                -- Turn back to original (4-i more right turns completes the circle)
+                for j = 1, 4 - i do
                     turtle.turnRight()
                 end
                 
-                return direction
+                -- Calculate original direction: we turned right i times,
+                -- so original was i positions counterclockwise from movedDirection
+                local directions = {"north", "east", "south", "west"}
+                local movedIdx
+                for idx, dir in ipairs(directions) do
+                    if dir == movedDirection then
+                        movedIdx = idx
+                        break
+                    end
+                end
+                
+                if movedIdx then
+                    local originalIdx = ((movedIdx - 1 - i) % 4) + 1
+                    local originalDirection = directions[originalIdx]
+                    print("GPS NAV: Original facing was " .. originalDirection)
+                    return originalDirection
+                end
             end
         end
     end
     
-    -- Failed to detect, but at least we've done a full 360 so we're back to original facing
+    print("GPS NAV: Failed to detect facing after all attempts")
     return nil
 end
 
