@@ -74,9 +74,9 @@ local function setupDeploymentTurtle()
     
     local files = {
         {url = "orchestrate_deploy.lua", name = "deploy.lua"},
-        {url = "quarry.lua", name = "quarry.lua"},
         {url = "dig.lua", name = "dig.lua"},
-        {url = "flex.lua", name = "flex.lua"}
+        {url = "flex.lua", name = "flex.lua"},
+        {url = "disk/worker/bootstrap.lua", name = "bootstrap.lua"}
     }
     
     local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/"
