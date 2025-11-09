@@ -109,6 +109,60 @@ function digDown()
     return down()
 end
 
+-- Helper to calculate turns needed between two cardinal directions
+local function calculateTurns(currentDir, targetDir)
+    local directions = {"north", "east", "south", "west"}
+    local currentIdx, targetIdx
+    
+    for i, dir in ipairs(directions) do
+        if dir == currentDir then currentIdx = i end
+        if dir == targetDir then targetIdx = i end
+    end
+    
+    if not currentIdx or not targetIdx then
+        return 0
+    end
+    
+    return (targetIdx - currentIdx) % 4
+end
+
+-- Helper to turn to face a direction (assumes we know current facing)
+local function turnToFace(currentFacing, targetFacing)
+    local turns = calculateTurns(currentFacing, targetFacing)
+    for i = 1, turns do
+        turtle.turnRight()
+    end
+    return targetFacing
+end
+
+-- Determine current facing by test movement
+local function detectFacing()
+    local gps1 = getGPS(5)
+    if not gps1 then
+        return nil
+    end
+    
+    if not turtle.forward() then
+        return nil
+    end
+    
+    local gps2 = getGPS(5)
+    turtle.back()
+    
+    if not gps2 then
+        return nil
+    end
+    
+    local dx = gps2.x - gps1.x
+    local dz = gps2.z - gps1.z
+    
+    if math.abs(dx) > math.abs(dz) then
+        return (dx > 0) and "east" or "west"
+    else
+        return (dz > 0) and "south" or "north"
+    end
+end
+
 -- Navigate to a GPS position
 -- This is the main function - just provide GPS coords and it goes there
 function goto(targetX, targetY, targetZ)
@@ -117,6 +171,14 @@ function goto(targetX, targetY, targetZ)
     end
     
     print("Navigating to GPS (" .. targetX .. ", " .. targetY .. ", " .. targetZ .. ")")
+    
+    -- Determine facing once at start for efficiency during this navigation session
+    local facing = detectFacing()
+    if facing then
+        print("Current facing: " .. facing)
+    else
+        print("Warning: Could not detect facing, will use GPS checks")
+    end
     
     -- Navigate Y first (vertical movement)
     while currentGPS.y < targetY do
@@ -141,52 +203,50 @@ function goto(targetX, targetY, targetZ)
         -- Update position from GPS
         local gps = getGPS(5)
         if not gps then
-            print("Warning: GPS unavailable, using estimate")
-            gps = currentGPS
-        else
-            currentGPS = gps
+            print("Warning: GPS unavailable")
+            return false
         end
+        currentGPS = gps
         
         local deltaX = targetX - currentGPS.x
         local deltaZ = targetZ - currentGPS.z
         
-        print("Current: (" .. currentGPS.x .. ", " .. currentGPS.z .. ") Target: (" .. targetX .. ", " .. targetZ .. ") Delta: (" .. deltaX .. ", " .. deltaZ .. ")")
-        
-        -- Check if we've arrived (within 0.5 blocks to be safe)
+        -- Check if we've arrived (within 0.5 blocks)
         if math.abs(deltaX) < 0.5 and math.abs(deltaZ) < 0.5 then
-            print("Arrived at target!")
+            print("Arrived!")
             return true
         end
         
-        -- Move toward target one block at a time
-        -- Choose the axis with the larger distance
+        -- Determine which direction to move (prefer larger delta)
+        local targetFacing = nil
         if math.abs(deltaX) >= math.abs(deltaZ) and math.abs(deltaX) >= 0.5 then
-            -- Move in X direction
-            local targetFacing = (deltaX > 0) and "east" or "west"
-            if not faceDirection(targetFacing) then
-                print("Failed to face " .. targetFacing)
-                return false
-            end
-            if not digForward() then
-                print("Blocked moving in X direction")
-                return false
-            end
+            targetFacing = (deltaX > 0) and "east" or "west"
         elseif math.abs(deltaZ) >= 0.5 then
-            -- Move in Z direction  
-            local targetFacing = (deltaZ > 0) and "south" or "north"
-            if not faceDirection(targetFacing) then
-                print("Failed to face " .. targetFacing)
-                return false
-            end
-            if not digForward() then
-                print("Blocked moving in Z direction")
-                return false
-            end
+            targetFacing = (deltaZ > 0) and "south" or "north"
         end
         
-        attempts = attempts + 1
+        if targetFacing then
+            -- Turn to face the target direction
+            if facing then
+                -- Use tracked facing for efficiency
+                facing = turnToFace(facing, targetFacing)
+            else
+                -- Fall back to GPS-based facing detection
+                if not faceDirection(targetFacing) then
+                    print("Failed to face " .. targetFacing)
+                    return false
+                end
+            end
+            
+            -- Move forward
+            if not digForward() then
+                print("Blocked, retrying...")
+                attempts = attempts + 1
+            end
+        else
+            attempts = attempts + 1
+        end
         
-        -- Brief pause to let GPS update
         sleep(0.1)
     end
     
@@ -195,71 +255,21 @@ function goto(targetX, targetY, targetZ)
 end
 
 -- Face a cardinal direction (north, south, east, west)
+-- Uses GPS test movement to determine current facing, then turns
 function faceDirection(direction)
-    -- Get current position to determine facing
-    local gps1 = getGPS(5)
-    if not gps1 then
-        print("Warning: Cannot determine facing without GPS")
+    local currentFacing = detectFacing()
+    if not currentFacing then
+        print("Warning: Cannot determine facing")
         return false
     end
     
-    -- Move forward and check GPS to determine current facing
-    local moved = turtle.forward()
-    if not moved then
-        -- Can't determine facing if can't move, just try turning
-        for i = 1, 4 do
-            if turtle.forward() then
-                moved = true
-                break
-            end
-            turtle.turnRight()
-        end
-        if not moved then
-            return false -- Can't move at all
-        end
+    -- Already facing the right direction?
+    if currentFacing == direction then
+        return true
     end
     
-    local gps2 = getGPS(5)
-    if not gps2 then
-        -- Move back and give up
-        turtle.back()
-        return false
-    end
-    
-    -- Determine current facing from movement
-    local dx = gps2.x - gps1.x
-    local dz = gps2.z - gps1.z
-    
-    local currentFacing
-    if dx > 0 then
-        currentFacing = "east"
-    elseif dx < 0 then
-        currentFacing = "west"
-    elseif dz > 0 then
-        currentFacing = "south"
-    elseif dz < 0 then
-        currentFacing = "north"
-    end
-    
-    -- Update current position
-    currentGPS = gps2
-    
-    -- Calculate turns needed
-    local directions = {"north", "east", "south", "west"}
-    local currentIdx, targetIdx
-    
-    for i, dir in ipairs(directions) do
-        if dir == currentFacing then currentIdx = i end
-        if dir == direction then targetIdx = i end
-    end
-    
-    if not currentIdx or not targetIdx then
-        return false
-    end
-    
-    local turns = (targetIdx - currentIdx) % 4
-    
-    -- Execute turns
+    -- Calculate and execute turns
+    local turns = calculateTurns(currentFacing, direction)
     for i = 1, turns do
         turtle.turnRight()
     end
