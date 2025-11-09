@@ -270,8 +270,19 @@ local function queuedResourceAccess(resourceType)
         return
     end
     
-    -- Save current position
+    -- Save current position AND direction
     local savedPos = gps_nav.getPosition()
+    local savedRotation = dig.getr()
+    
+    -- Detect the actual GPS cardinal direction we're facing
+    local savedDirection = gps_nav.getCurrentDirection()
+    if not savedDirection then
+        print("Warning: Could not detect GPS direction, will skip direction restoration")
+    end
+    
+    print("Saving position: " .. textutils.serialize(savedPos) .. 
+          " dig.lua rotation=" .. savedRotation .. 
+          (savedDirection and (" GPS direction=" .. savedDirection) or ""))
     
     -- Validate we're in zone before leaving
     validateInZone()
@@ -339,6 +350,20 @@ local function queuedResourceAccess(resourceType)
     
     -- Return to saved position using GPS navigation
     gps_nav.goto(savedPos.x, savedPos.y, savedPos.z)
+    
+    -- Restore the original facing direction
+    if savedDirection then
+        print("Restoring GPS direction: " .. savedDirection)
+        if gps_nav.faceDirection(savedDirection) then
+            -- Synchronize dig.lua's rotation with what we had before
+            dig.setr(savedRotation)
+            print("Direction restored: dig.lua rotation=" .. dig.getr() .. " GPS direction=" .. savedDirection)
+        else
+            print("Warning: Failed to restore direction")
+        end
+    else
+        print("Skipping direction restoration (detection failed earlier)")
+    end
     
     -- Validate we're back in zone
     validateInZone()

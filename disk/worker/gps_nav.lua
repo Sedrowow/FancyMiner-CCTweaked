@@ -48,6 +48,12 @@ function getStart()
     return startGPS
 end
 
+-- Get the current GPS cardinal direction the turtle is facing
+-- Returns: direction string ("north", "south", "east", "west") or nil if detection fails
+function getCurrentDirection()
+    return detectFacing()
+end
+
 -- Move forward, updating GPS estimate
 function forward()
     if turtle.forward() then
