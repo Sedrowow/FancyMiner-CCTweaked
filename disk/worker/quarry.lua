@@ -597,11 +597,13 @@ if coordinatedMode then
     local function mineQuarry()
         -- Workers start at dig.lua Y=0 (world Y=-1 where they were placed)
         -- Mine down layer by layer from Y=0 to Y=-depth
+        -- Workers face south (rotation 180), mine east by going X=0 to X=-(width-1)
         for y = 0, -depth, -1 do
             if y <= -skip then -- Only mine at skip depth and below
                 -- Mine current layer in a back-and-forth pattern
                 for z = 0, length - 1 do
-                    for x = 0, width - 1 do
+                    -- Mine eastward: X=0 down to X=-(width-1)
+                    for x = 0, -(width - 1), -1 do
                         -- Check fuel and inventory periodically
                         checkFuel()
                         checkInv()
