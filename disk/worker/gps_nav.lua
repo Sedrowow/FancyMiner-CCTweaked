@@ -39,7 +39,9 @@ function updatePosition()
 end
 
 -- Get current GPS position (returns a copy to prevent external modification)
+-- Always fetches fresh GPS coordinates since turtle may have moved via dig.lua
 function getPosition()
+    updatePosition()
     return {x = currentGPS.x, y = currentGPS.y, z = currentGPS.z}
 end
 
@@ -73,8 +75,11 @@ local function detectFacing()
     end
     
     -- If blocked forward, try turning and testing each direction
+    local turnsCount = 0
     for i = 1, 4 do
         turtle.turnRight()
+        turnsCount = turnsCount + 1
+        
         if turtle.forward() then
             local gps2 = getGPS(5)
             turtle.back()
@@ -83,15 +88,24 @@ local function detectFacing()
                 local dx = gps2.x - gps1.x
                 local dz = gps2.z - gps1.z
                 
+                local direction
                 if math.abs(dx) > math.abs(dz) then
-                    return (dx > 0) and "east" or "west"
+                    direction = (dx > 0) and "east" or "west"
                 else
-                    return (dz > 0) and "south" or "north"
+                    direction = (dz > 0) and "south" or "north"
                 end
+                
+                -- Turn back to original facing before returning
+                for j = 1, 4 - turnsCount do
+                    turtle.turnRight()
+                end
+                
+                return direction
             end
         end
     end
     
+    -- Failed to detect, but at least we've done a full 360 so we're back to original facing
     return nil
 end
 
@@ -163,6 +177,7 @@ function digDown()
 end
 
 -- Helper to calculate turns needed between two cardinal directions
+-- Returns: number of right turns (positive) or left turns (negative) for minimum path
 local function calculateTurns(currentDir, targetDir)
     local directions = {"north", "east", "south", "west"}
     local currentIdx, targetIdx
@@ -176,15 +191,33 @@ local function calculateTurns(currentDir, targetDir)
         return 0
     end
     
-    return (targetIdx - currentIdx) % 4
+    local rightTurns = (targetIdx - currentIdx) % 4
+    
+    -- If more than 2 right turns, turn left instead (more efficient)
+    if rightTurns > 2 then
+        return -(4 - rightTurns)  -- Negative means turn left
+    else
+        return rightTurns
+    end
 end
 
 -- Helper to turn to face a direction (assumes we know current facing)
 local function turnToFace(currentFacing, targetFacing)
     local turns = calculateTurns(currentFacing, targetFacing)
-    for i = 1, turns do
-        turtle.turnRight()
+    
+    if turns > 0 then
+        -- Turn right
+        for i = 1, turns do
+            turtle.turnRight()
+        end
+    elseif turns < 0 then
+        -- Turn left
+        for i = 1, -turns do
+            turtle.turnLeft()
+        end
     end
+    -- If turns == 0, already facing correct direction
+    
     return targetFacing
 end
 
@@ -293,10 +326,19 @@ function faceDirection(direction)
         return true
     end
     
-    -- Calculate and execute turns
+    -- Calculate and execute turns (positive = right, negative = left)
     local turns = calculateTurns(currentFacing, direction)
-    for i = 1, turns do
-        turtle.turnRight()
+    
+    if turns > 0 then
+        -- Turn right
+        for i = 1, turns do
+            turtle.turnRight()
+        end
+    elseif turns < 0 then
+        -- Turn left
+        for i = 1, -turns do
+            turtle.turnLeft()
+        end
     end
     
     return true
