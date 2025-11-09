@@ -492,6 +492,8 @@ local function handleMessage(message)
             for i = 1, #state.gpsZones do
                 local gpsZone = state.gpsZones[i]
                 
+                print("  Checking zone " .. i .. ": X[" .. gpsZone.gps_xmin .. "-" .. gpsZone.gps_xmax .. "] Z[" .. gpsZone.gps_zmin .. "-" .. gpsZone.gps_zmax .. "]")
+                
                 -- Check if worker's position is within this zone's boundaries
                 if workerGPS.x >= gpsZone.gps_xmin and workerGPS.x <= gpsZone.gps_xmax and
                    workerGPS.z >= gpsZone.gps_zmin and workerGPS.z <= gpsZone.gps_zmax then
@@ -529,7 +531,14 @@ local function handleMessage(message)
             if not matchedZone then
                 print("  Error: No zone found containing position (" .. workerGPS.x .. ", " .. workerGPS.z .. ")")
                 print("  Worker is outside quarry boundaries!")
+                print("  Zone list:")
+                for i = 1, #state.gpsZones do
+                    local z = state.gpsZones[i]
+                    print("    Zone " .. i .. ": X[" .. z.gps_xmin .. "-" .. z.gps_xmax .. "] Z[" .. z.gps_zmin .. "-" .. z.gps_zmax .. "]")
+                end
             end
+        else
+            print("  Error: Zones not initialized yet!")
         end
         
     elseif message.type == "worker_ready" then
@@ -563,7 +572,8 @@ local function handleMessage(message)
             state[lockKey] = message.turtle_id
             
             local chestPos = state.chestPositions[resourceType]
-            local approachDir = (resourceType == "output") and "down" or "west"
+            -- Both chests are at Y=1, workers access from below at Y=0
+            local approachDir = "down"
             
             modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
                 type = "resource_granted",

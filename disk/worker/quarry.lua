@@ -85,29 +85,34 @@ local function gpsNavigateTo(targetGPS, approachDir)
     
     -- Calculate approach position based on direction
     local approachGPS = {x = targetGPS.x, y = targetGPS.y, z = targetGPS.z}
-    if approachDir == "north" then
-        approachGPS.z = targetGPS.z + 1
-    elseif approachDir == "south" then
-        approachGPS.z = targetGPS.z - 1
-    elseif approachDir == "east" then
-        approachGPS.x = targetGPS.x + 1
-    elseif approachDir == "west" then
-        approachGPS.x = targetGPS.x - 1
-    elseif approachDir == "down" then
-        approachGPS.y = targetGPS.y - 1
-    elseif approachDir == "up" then
-        approachGPS.y = targetGPS.y + 1
+    if approachDir then
+        if approachDir == "north" then
+            approachGPS.z = targetGPS.z + 1
+        elseif approachDir == "south" then
+            approachGPS.z = targetGPS.z - 1
+        elseif approachDir == "east" then
+            approachGPS.x = targetGPS.x + 1
+        elseif approachDir == "west" then
+            approachGPS.x = targetGPS.x - 1
+        elseif approachDir == "down" then
+            approachGPS.y = targetGPS.y - 1
+        elseif approachDir == "up" then
+            approachGPS.y = targetGPS.y + 1
+        end
     end
+    
+    -- Convert GPS Y to dig.lua Y coordinate
+    -- dig.lua Y=0 corresponds to startGPS.y (where turtle was placed/started)
+    local targetDigY = approachGPS.y - config.startGPS.y
     
     -- Navigate to Y level first
     local currentY = dig.gety()
-    local targetY = approachGPS.y
-    if currentY < targetY then
-        for i = 1, targetY - currentY do
+    if currentY < targetDigY then
+        for i = 1, targetDigY - currentY do
             dig.up()
         end
-    elseif currentY > targetY then
-        for i = 1, currentY - targetY do
+    elseif currentY > targetDigY then
+        for i = 1, currentY - targetDigY do
             dig.down()
         end
     end
@@ -332,12 +337,7 @@ local function queuedResourceAccess(resourceType)
     
     print("Operation complete, returning to mining position...")
     
-    -- Return to saved position using GPS
-    if savedGPS then
-        gpsNavigateTo(savedGPS, "north")
-    end
-    
-    -- Fine-tune using dead reckoning
+    -- Return to saved position using dead reckoning (most accurate)
     dig.goto(savedPos.x, savedPos.y, savedPos.z, savedPos.r)
     
     -- Validate we're back in zone
@@ -688,9 +688,6 @@ if config.isCoordinated then
     
     -- Return to starting position
     print("Returning to starting position...")
-    if config.startGPS then
-        gpsNavigateTo(config.startGPS, "north")
-    end
     dig.goto(0, 0, 0, 0)
     print("Arrived at starting position")
     
