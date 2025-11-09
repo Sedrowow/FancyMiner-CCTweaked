@@ -1,5 +1,5 @@
 -- --- Configuration ---
-local githubBaseUrl = "https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/main/"
+local githubBaseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/"
 
 -- List the exact filenames for each setup type.
 local minerScripts = {"flex.lua", "dig.lua", "quarry.lua", "stairs.lua"} -- Add any other miner scripts here

@@ -34,7 +34,7 @@ local function setupWorkerTurtle()
     print()
     print("Downloading bootstrap loader...")
     
-    local url = "https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/main/disk/worker/bootstrap.lua"
+    local url = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/disk/worker/bootstrap.lua"
     local success = shell.run("wget", url, "startup.lua")
     
     if success then
@@ -78,7 +78,7 @@ local function setupDeploymentTurtle()
         {url = "flex.lua", name = "flex.lua"}
     }
     
-    local baseUrl = "https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/main/"
+    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/"
     
     for _, file in ipairs(files) do
         print("Downloading " .. file.name .. "...")
@@ -117,7 +117,7 @@ local function setupOrchestrationServer()
     print()
     print("Downloading orchestration server...")
     
-    local url = "https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/main/orchestrate_server.lua"
+    local url = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/orchestrate_server.lua"
     local success = shell.run("wget", url, "server.lua")
     
     if success then
@@ -173,7 +173,7 @@ local function setupFirmwareDisk()
     
     print("Downloading firmware files...")
     
-    local baseUrl = "https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/main/disk/worker/"
+    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/disk/worker/"
     local files = {"bootstrap.lua", "quarry.lua", "dig.lua", "flex.lua"}
     
     for _, filename in ipairs(files) do
