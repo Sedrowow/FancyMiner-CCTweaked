@@ -534,17 +534,18 @@ local function calculateFuelThreshold()
     return threshold
 end
 
--- Check if running as coordinated worker
-local function isCoordinatedMode()
-    -- Check if we're being initialized as part of deployment
-    return fs.exists("quarry.lua") and not fs.exists("startup.lua")
-end
-
 -- Main execution
-if isCoordinatedMode() then
-    -- Initialize as coordinated worker
+-- Always try to initialize as coordinated worker
+-- If we're deployed, we'll get zone assignments
+-- If standalone, this will fail/timeout and we skip to standalone mode
+
+local coordinatedMode = false
+local initSuccess = pcall(function()
     initializeWorker()
-    
+    coordinatedMode = true
+end)
+
+if coordinatedMode then
     -- Calculate fuel threshold based on zone dimensions
     fuelThreshold = calculateFuelThreshold()
     
