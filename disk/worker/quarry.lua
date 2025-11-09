@@ -653,13 +653,9 @@ if coordinatedMode then
         print("Returning to starting position...")
         sendStatusUpdate("aborting")
         
-        -- Return to start GPS position if available
-        if config.startGPS then
-            local returnSuccess = gpsNavigateTo(config.startGPS, "north")
-            if not returnSuccess then
-                print("Warning: Could not return to exact start position")
-            end
-        end
+        -- Return to start position using dig.goto for accurate dead reckoning
+        dig.goto(0, 0, 0, 0)
+        print("Returned to dig.lua origin (0, 0, 0)")
         
         -- Send abort acknowledgment
         modem.transmit(config.serverChannel, config.serverChannel, {
