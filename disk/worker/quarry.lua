@@ -17,7 +17,8 @@ local config = {
         output = nil
     },
     isCoordinated = false,
-    startGPS = nil
+    startGPS = nil,
+    aborted = false
 }
 
 local modem = peripheral.find("ender_modem")
@@ -475,13 +476,18 @@ if isCoordinatedMode() then
     
     print("Zone dimensions: " .. width .. "x" .. length .. "x" .. depth)
     
-    -- Set up periodic status updates
+    -- Set up periodic status updates and abort checking
     local lastStatusUpdate = os.clock()
     local statusUpdateInterval = 10 -- Send status every 10 seconds
     
-    -- Wrap dig functions to include periodic status updates
+    -- Wrap dig functions to include periodic status updates and abort checks
     local originalFwd = dig.fwd
     dig.fwd = function()
+        -- Check for abort command (non-blocking)
+        if config.isCoordinated and config.aborted then
+            error("Operation aborted by server")
+        end
+        
         local result = originalFwd()
         
         -- Send periodic status update
@@ -493,8 +499,52 @@ if isCoordinatedMode() then
         return result
     end
     
-    -- Run the actual quarry operation
-    dig.quarry(width, length, depth, skip)
+    -- Set up parallel task to listen for abort
+    local function abortListener()
+        while not config.aborted do
+            local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
+            if type(message) == "table" and message.type == "abort_mining" then
+                config.aborted = true
+                print("\n=== ABORT RECEIVED ===\")
+                break
+            end
+        end
+    end
+    
+    -- Run the actual quarry operation with abort handling
+    local miningSuccess, miningError = pcall(function()
+        parallel.waitForAny(
+            function() dig.quarry(width, length, depth, skip) end,
+            abortListener
+        )
+    end)
+    
+    -- Handle abort
+    if not miningSuccess and config.aborted then
+        print("Returning to starting position...")
+        sendStatusUpdate("aborting")
+        
+        -- Return to start GPS position if available
+        if config.startGPS then
+            local returnSuccess = gpsNavigateTo(config.startGPS, "north")
+            if not returnSuccess then
+                print("Warning: Could not return to exact start position")
+            end
+        end
+        
+        -- Send abort acknowledgment
+        modem.transmit(config.serverChannel, config.serverChannel, {
+            type = "abort_ack",
+            turtle_id = config.turtleID,
+            position = getGPS(3)
+        })
+        
+        print("Abort complete - standing by")
+        sendStatusUpdate("aborted")
+        return
+    elseif not miningSuccess then
+        error(miningError)
+    end
     
 else
     -- Run as standalone (not coordinated)

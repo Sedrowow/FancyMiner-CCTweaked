@@ -54,7 +54,7 @@ This approach solves the chicken-and-egg problem: workers only need a small boot
 For easier setup, use the provided helper script:
 
 ```
-wget https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/main/orchestrate_setup.lua setup.lua
+wget https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/orchestrate_setup.lua setup.lua
 setup
 ```
 
@@ -242,6 +242,29 @@ Workers send status updates including:
 - Fuel level
 - Mining state
 - Inventory summary
+
+## Aborting Operation
+
+You can abort the mining operation at any time:
+
+1. Press **'Q'** on the orchestration server computer
+2. Server broadcasts abort command to all workers
+3. Workers immediately stop mining
+4. Workers return to their starting positions using GPS
+5. Workers send acknowledgment back to server
+6. Monitor displays "ABORTED" status
+
+**What happens on abort:**
+- All workers stop mining mid-operation
+- Workers navigate back to where they were placed
+- Queued resource requests are cancelled
+- Server displays acknowledgment count as workers return
+- System remains halted until server is restarted
+
+**To resume after abort:**
+- Restart the orchestration server
+- Server will need to be redeployed with new workers
+- Previous state is not preserved after abort
 
 ## Completion and Cleanup
 

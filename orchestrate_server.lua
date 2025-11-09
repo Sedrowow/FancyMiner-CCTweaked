@@ -20,7 +20,9 @@ local state = {
         output = nil
     },
     miningStarted = false,
-    completedCount = 0
+    completedCount = 0,
+    aborted = false,
+    abortAckCount = 0
 }
 
 local STATE_FILE = "orchestrate_state.cfg"
@@ -182,10 +184,14 @@ local function updateDisplay()
     
     -- Status line at very bottom
     setCursorPos(1, displayHeight)
-    setColor(colors.lightGray)
-    if state.miningStarted then
-        write("Status: Mining Active")
+    if state.aborted then
+        setColor(colors.red)
+        write("Status: ABORTED - Workers Returning")
+    elseif state.miningStarted then
+        setColor(colors.lightGray)
+        write("Status: Mining Active (Q=Abort)")
     else
+        setColor(colors.lightGray)
         write("Status: Waiting...")
     end
 end
@@ -446,6 +452,23 @@ local function handleMessage(message)
         print("Deployment complete - waiting for workers to initialize")
         saveState()
         updateDisplay()
+        
+    elseif message.type == "abort_ack" then
+        -- Worker acknowledged abort command
+        state.abortAckCount = state.abortAckCount + 1
+        if state.workers[message.turtle_id] then
+            state.workers[message.turtle_id].status = "aborted"
+        end
+        print("Worker " .. message.turtle_id .. " acknowledged abort (" .. state.abortAckCount .. "/" .. state.totalWorkers .. ")")
+        saveState()
+        updateDisplay()
+        
+        -- All workers acknowledged
+        if state.abortAckCount >= state.totalWorkers then
+            print("\n=== All workers have aborted ===")
+            print("Workers returned to starting positions")
+            print("System halted. Restart server to begin new operation.")
+        end
     end
 end
 
@@ -453,6 +476,7 @@ end
 local function main()
     print("\n=== Orchestration Server Ready ===")
     print("Waiting for deployment requests...")
+    print("Press 'Q' to abort operation")
     print("Press Ctrl+T to stop\n")
     
     -- Try to load previous state
@@ -464,10 +488,31 @@ local function main()
     updateDisplay()
     
     while true do
-        local event, side, channel, replyChannel, message, distance = os.pullEvent()
+        local event, p1, p2, p3, p4, p5 = os.pullEvent()
         
         if event == "modem_message" then
+            local channel, replyChannel, message, distance = p1, p2, p3, p4
             handleMessage(message)
+            
+        elseif event == "key" then
+            local key = p1
+            -- Q key = 16
+            if key == keys.q and state.miningStarted and not state.aborted then
+                print("\n=== ABORT INITIATED ===")
+                print("Sending abort command to all workers...")
+                
+                state.aborted = true
+                state.abortAckCount = 0
+                
+                -- Broadcast abort command
+                modem.transmit(BROADCAST_CHANNEL, SERVER_CHANNEL, {
+                    type = "abort_mining"
+                })
+                
+                print("Abort command sent. Waiting for workers to return...")
+                saveState()
+                updateDisplay()
+            end
         end
     end
 end
