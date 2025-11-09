@@ -367,40 +367,41 @@ local function queuedResourceAccess(resourceType)
     end
     
     log("Operation complete, returning to mining position...")
+    log("Target position: " .. textutils.serialize(savedPos))
+    log("Current position before return: " .. textutils.serialize(gps_nav.getPosition()))
     
     -- Return to saved position using GPS navigation
-    gps_nav.goto(savedPos.x, savedPos.y, savedPos.z)
-    log("Arrived at saved GPS position, current dig.lua rotation=" .. dig.getr())
+    local returnSuccess = gps_nav.goto(savedPos.x, savedPos.y, savedPos.z)
+    
+    if not returnSuccess then
+        log("ERROR: Failed to return to saved position!")
+        log("Current position: " .. textutils.serialize(gps_nav.getPosition()))
+        log("Target was: " .. textutils.serialize(savedPos))
+        -- Still try to restore direction
+    else
+        log("Successfully arrived at saved GPS position")
+    end
+    log("Current dig.lua rotation after navigation: " .. dig.getr())
     
     -- Restore the original facing direction
     if savedDirection then
-        log("Restoring GPS direction: " .. savedDirection)
+        log("Restoring direction to: " .. savedDirection .. " (dig.lua rotation=" .. savedRotation .. ")")
         
-        -- First, use GPS to turn to face the saved cardinal direction
+        -- Use GPS to turn to face the saved cardinal direction
+        -- faceDirection already uses dig.left/right so it maintains dig.lua tracking
         if gps_nav.faceDirection(savedDirection) then
-            log("GPS facing restored to: " .. savedDirection)
-            
-            -- Now detect what direction we're actually facing to verify
-            local currentDirection = gps_nav.getCurrentDirection()
-            if currentDirection == savedDirection then
-                -- Good! Now set dig.lua's rotation to match the saved value
-                dig.setr(savedRotation)
-                log("Direction fully restored: dig.lua rotation=" .. dig.getr() .. " GPS direction=" .. savedDirection)
-            else
-                log("Warning: GPS direction mismatch after restoration")
-                log("Expected: " .. savedDirection .. ", Got: " .. tostring(currentDirection))
-                -- Still set the rotation to try to recover
-                dig.setr(savedRotation)
-            end
+            -- Now override dig.lua's rotation to the exact saved value
+            -- This is needed because gps_nav may have taken a different path
+            dig.setr(savedRotation)
+            log("Direction restored: dig.lua rotation=" .. dig.getr() .. " GPS direction=" .. savedDirection)
         else
-            log("Warning: Failed to restore GPS direction")
-            -- Try to at least restore dig.lua rotation
+            log("Warning: Failed to restore GPS direction, setting dig.lua rotation anyway")
             dig.setr(savedRotation)
         end
     else
-        log("Warning: Skipping direction restoration (detection failed earlier)")
-        log("Attempting to restore dig.lua rotation anyway: " .. savedRotation)
+        log("Warning: Could not detect GPS direction earlier, restoring dig.lua rotation only")
         dig.setr(savedRotation)
+        log("dig.lua rotation set to: " .. dig.getr())
     end
     
     -- Validate we're back in zone

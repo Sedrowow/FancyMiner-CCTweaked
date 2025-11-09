@@ -228,30 +228,35 @@ function goto(targetX, targetY, targetZ)
         error("Invalid target coordinates")
     end
     
-    print("Navigating to GPS (" .. targetX .. ", " .. targetY .. ", " .. targetZ .. ")")
+    print("GPS NAV: Starting navigation to (" .. targetX .. ", " .. targetY .. ", " .. targetZ .. ")")
+    print("GPS NAV: Current position: " .. textutils.serialize(currentGPS))
     
     -- Determine facing once at start for efficiency during this navigation session
     local facing = detectFacing()
     if facing then
-        print("Current facing: " .. facing)
+        print("GPS NAV: Current facing: " .. facing)
     else
-        print("Warning: Could not detect facing, will use GPS checks")
+        print("GPS NAV: Warning - Could not detect facing, will use GPS checks")
     end
     
     -- Navigate Y first (vertical movement)
     while currentGPS.y < targetY do
+        print("GPS NAV: Moving up (Y: " .. currentGPS.y .. " -> " .. targetY .. ")")
         if not digUp() then
-            print("Blocked going up")
+            print("GPS NAV: ERROR - Blocked going up")
             return false
         end
     end
     
     while currentGPS.y > targetY do
+        print("GPS NAV: Moving down (Y: " .. currentGPS.y .. " -> " .. targetY .. ")")
         if not digDown() then
-            print("Blocked going down")
+            print("GPS NAV: ERROR - Blocked going down")
             return false
         end
     end
+    
+    print("GPS NAV: Y navigation complete, starting X/Z navigation")
     
     -- Navigate X and Z using GPS feedback
     local maxAttempts = 500
