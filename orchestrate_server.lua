@@ -369,9 +369,15 @@ end
 
 -- Handle incoming messages
 local function handleMessage(message)
-    if type(message) ~= "table" then return end
+    if type(message) ~= "table" then 
+        print("DEBUG: Received non-table message")
+        return 
+    end
+    
+    print("DEBUG: Received message type: " .. tostring(message.type))
     
     if message.type == "deploy_request" then
+        print("DEBUG: Processing deploy_request from deployer " .. message.deployer_id)
         -- Client requesting deployment parameters
         state.deployerID = message.deployer_id
         state.totalWorkers = message.num_workers
@@ -690,6 +696,7 @@ local function main()
         
         if event == "modem_message" then
             local channel, replyChannel, message, distance = p1, p2, p3, p4
+            print("DEBUG: Modem message on channel " .. channel .. " from " .. replyChannel)
             handleMessage(message)
             
         elseif event == "key" then

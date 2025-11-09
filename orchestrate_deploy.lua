@@ -187,6 +187,10 @@ local function deploy()
     local skip = tonumber(read())
     
     -- Send deployment request to server (include deployer as a worker)
+    print("\nSending deploy_request to channel " .. SERVER_CHANNEL)
+    print("Deployer ID: " .. state.deployerID)
+    print("Num workers: " .. (#turtleSlots + 1))
+    
     modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
         type = "deploy_request",
         deployer_id = state.deployerID,
