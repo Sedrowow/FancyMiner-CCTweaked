@@ -137,6 +137,15 @@ local function deployWorker(slot, zone, zoneIndex)
         print("Fueled worker " .. zoneIndex .. " with 8 fuel")
     end
     
+    -- Turn on the placed turtle
+    local turtlePeripheral = peripheral.wrap("bottom")
+    if turtlePeripheral and turtlePeripheral.turnOn then
+        turtlePeripheral.turnOn()
+        print("Worker " .. zoneIndex .. " powered on")
+    else
+        print("Warning: Could not turn on worker " .. zoneIndex)
+    end
+    
     print("Turtle placed at zone " .. zoneIndex)
     return true, slot
 end

@@ -48,6 +48,53 @@ function getStart()
     return startGPS
 end
 
+-- Determine current facing by test movement
+local function detectFacing()
+    local gps1 = getGPS(5)
+    if not gps1 then
+        return nil
+    end
+    
+    -- Try moving forward first
+    if turtle.forward() then
+        local gps2 = getGPS(5)
+        turtle.back()
+        
+        if gps2 then
+            local dx = gps2.x - gps1.x
+            local dz = gps2.z - gps1.z
+            
+            if math.abs(dx) > math.abs(dz) then
+                return (dx > 0) and "east" or "west"
+            else
+                return (dz > 0) and "south" or "north"
+            end
+        end
+    end
+    
+    -- If blocked forward, try turning and testing each direction
+    for i = 1, 4 do
+        turtle.turnRight()
+        if turtle.forward() then
+            local gps2 = getGPS(5)
+            turtle.back()
+            
+            if gps2 then
+                local dx = gps2.x - gps1.x
+                local dz = gps2.z - gps1.z
+                
+                if math.abs(dx) > math.abs(dz) then
+                    return (dx > 0) and "east" or "west"
+                else
+                    return (dz > 0) and "south" or "north"
+                end
+            end
+        end
+    end
+    
+    return nil
+end
+
 -- Get the current GPS cardinal direction the turtle is facing
 -- Returns: direction string ("north", "south", "east", "west") or nil if detection fails
 function getCurrentDirection()
@@ -139,53 +186,6 @@ local function turnToFace(currentFacing, targetFacing)
         turtle.turnRight()
     end
     return targetFacing
-end
-
--- Determine current facing by test movement
-local function detectFacing()
-    local gps1 = getGPS(5)
-    if not gps1 then
-        return nil
-    end
-    
-    -- Try moving forward first
-    if turtle.forward() then
-        local gps2 = getGPS(5)
-        turtle.back()
-        
-        if gps2 then
-            local dx = gps2.x - gps1.x
-            local dz = gps2.z - gps1.z
-            
-            if math.abs(dx) > math.abs(dz) then
-                return (dx > 0) and "east" or "west"
-            else
-                return (dz > 0) and "south" or "north"
-            end
-        end
-    end
-    
-    -- If blocked forward, try turning and testing each direction
-    for i = 1, 4 do
-        turtle.turnRight()
-        if turtle.forward() then
-            local gps2 = getGPS(5)
-            turtle.back()
-            
-            if gps2 then
-                local dx = gps2.x - gps1.x
-                local dz = gps2.z - gps1.z
-                
-                if math.abs(dx) > math.abs(dz) then
-                    return (dx > 0) and "east" or "west"
-                else
-                    return (dz > 0) and "south" or "north"
-                end
-            end
-        end
-    end
-    
-    return nil
 end
 
 -- Navigate to a GPS position
