@@ -601,7 +601,7 @@ if isCoordinatedMode() then
             local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
             if type(message) == "table" and message.type == "abort_mining" then
                 config.aborted = true
-                print("\n=== ABORT RECEIVED ===\")
+                print("\n=== ABORT RECEIVED ===")
                 break
             end
         end
