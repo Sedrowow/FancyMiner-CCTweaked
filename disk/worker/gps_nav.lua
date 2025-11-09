@@ -149,41 +149,44 @@ function goto(targetX, targetY, targetZ)
         local deltaX = targetX - currentGPS.x
         local deltaZ = targetZ - currentGPS.z
         
-        -- Check if we've arrived (within 0.1 blocks accounts for GPS rounding)
-        if math.abs(deltaX) <= 0.1 and math.abs(deltaZ) <= 0.1 then
-            print("Arrived at target (GPS: " .. currentGPS.x .. ", " .. currentGPS.y .. ", " .. currentGPS.z .. ")")
+        print("Current: (" .. currentGPS.x .. ", " .. currentGPS.z .. ") Target: (" .. targetX .. ", " .. targetZ .. ") Delta: (" .. deltaX .. ", " .. deltaZ .. ")")
+        
+        -- Check if we've arrived (within 0.5 blocks to be safe)
+        if math.abs(deltaX) < 0.5 and math.abs(deltaZ) < 0.5 then
+            print("Arrived at target!")
             return true
         end
         
-        -- Determine which direction to move
-        -- Prioritize the axis with larger distance
-        local moveX = math.abs(deltaX) > math.abs(deltaZ)
-        
-        if moveX and deltaX ~= 0 then
+        -- Move toward target one block at a time
+        -- Choose the axis with the larger distance
+        if math.abs(deltaX) >= math.abs(deltaZ) and math.abs(deltaX) >= 0.5 then
             -- Move in X direction
             local targetFacing = (deltaX > 0) and "east" or "west"
-            faceDirection(targetFacing)
-            if not digForward() then
-                -- Blocked, try other direction
-                moveX = false
-            else
-                attempts = attempts + 1
-                goto continue
+            if not faceDirection(targetFacing) then
+                print("Failed to face " .. targetFacing)
+                return false
             end
-        end
-        
-        if deltaZ ~= 0 then
+            if not digForward() then
+                print("Blocked moving in X direction")
+                return false
+            end
+        elseif math.abs(deltaZ) >= 0.5 then
             -- Move in Z direction  
             local targetFacing = (deltaZ > 0) and "south" or "north"
-            faceDirection(targetFacing)
+            if not faceDirection(targetFacing) then
+                print("Failed to face " .. targetFacing)
+                return false
+            end
             if not digForward() then
-                print("Blocked in both directions")
+                print("Blocked moving in Z direction")
                 return false
             end
         end
         
-        ::continue::
         attempts = attempts + 1
+        
+        -- Brief pause to let GPS update
+        sleep(0.1)
     end
     
     print("Failed to reach target after " .. maxAttempts .. " attempts")
