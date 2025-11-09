@@ -27,7 +27,8 @@ local state = {
     firmwareCache = nil, -- Cached firmware files
     firmwareRequests = {}, -- Track which workers requested firmware
     zones = nil, -- Zone definitions (relative coordinates)
-    gpsZones = nil -- GPS zones with assignment tracking
+    gpsZones = nil, -- GPS zones with assignment tracking
+    isDeployerWorker = false -- Whether deployer participates as worker
 }
 
 local STATE_FILE = "orchestrate_state.cfg"
@@ -375,6 +376,7 @@ local function handleMessage(message)
         state.deployerID = message.deployer_id
         state.totalWorkers = message.num_workers
         state.quarryParams = message.quarry_params
+        state.isDeployerWorker = message.is_deployer or false
         
         local zones = calculateZones(
             message.quarry_params.width,
@@ -437,9 +439,11 @@ local function handleMessage(message)
     elseif message.type == "worker_online" then
         -- Worker broadcasting that it's online and ready
         local turtleID = message.turtle_id
+        local currentTime = os.clock()
+        local lastRequest = state.firmwareRequests[turtleID] or 0
         
-        -- Only respond if we have firmware loaded and haven't sent to this worker yet
-        if state.firmwareCache and not state.firmwareRequests[turtleID] then
+        -- Only respond if we have firmware loaded and haven't sent recently (allow re-send after 30 seconds)
+        if state.firmwareCache and (currentTime - lastRequest) > 30 then
             print("Worker " .. turtleID .. " online, sending server info...")
             
             -- Send server channel response
@@ -449,8 +453,8 @@ local function handleMessage(message)
                 server_channel = SERVER_CHANNEL
             })
             
-            -- Mark that we're handling this worker
-            state.firmwareRequests[turtleID] = true
+            -- Mark when we sent firmware to this worker
+            state.firmwareRequests[turtleID] = currentTime
             
             -- Send firmware after a brief delay
             sleep(0.5)
@@ -462,17 +466,37 @@ local function handleMessage(message)
         print("Turtle " .. message.turtle_id .. " received " .. message.filename)
         
     elseif message.type == "firmware_complete" then
-        -- Worker has all firmware files, now assign zone
+        -- Worker has all firmware files, match to zone by GPS position
         local turtleID = message.turtle_id
-        print("Turtle " .. turtleID .. " has all firmware, assigning zone...")
+        local workerGPS = message.gps_position
         
-        -- Find an unassigned zone for this worker
+        if not workerGPS then
+            print("Error: Turtle " .. turtleID .. " did not provide GPS position")
+            return
+        end
+        
+        print("Turtle " .. turtleID .. " at GPS (" .. workerGPS.x .. ", " .. workerGPS.y .. ", " .. workerGPS.z .. "), finding matching zone...")
+        
+        -- Find zone that contains this worker's GPS position
         if state.zones and state.gpsZones then
-            for i = 1, #state.zones do
-                if not state.gpsZones[i].assigned then
+            local matchedZone = nil
+            
+            for i = 1, #state.gpsZones do
+                local gpsZone = state.gpsZones[i]
+                
+                -- Check if worker's position is within this zone's boundaries
+                if workerGPS.x >= gpsZone.gps_xmin and workerGPS.x <= gpsZone.gps_xmax and
+                   workerGPS.z >= gpsZone.gps_zmin and workerGPS.z <= gpsZone.gps_zmax then
+                    
+                    if gpsZone.assigned then
+                        print("  Warning: Zone " .. i .. " already assigned to turtle " .. gpsZone.turtle_id)
+                        print("  Multiple workers in same zone!")
+                    end
+                    
                     -- Assign this zone to this turtle
-                    state.gpsZones[i].assigned = true
-                    state.gpsZones[i].turtle_id = turtleID
+                    gpsZone.assigned = true
+                    gpsZone.turtle_id = turtleID
+                    matchedZone = i
                     
                     -- Send zone assignment
                     modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
@@ -480,14 +504,19 @@ local function handleMessage(message)
                         turtle_id = turtleID,
                         zone_index = i,
                         zone = state.zones[i],
-                        gps_zone = state.gpsZones[i],
+                        gps_zone = gpsZone,
                         server_channel = SERVER_CHANNEL
                     })
                     
-                    print("  Assigned zone " .. i .. " (X: " .. state.zones[i].xmin .. "-" .. state.zones[i].xmax .. ") to turtle " .. turtleID)
+                    print("  Matched to zone " .. i .. " (X: " .. state.zones[i].xmin .. "-" .. state.zones[i].xmax .. ")")
                     saveState()
                     break
                 end
+            end
+            
+            if not matchedZone then
+                print("  Error: No zone found containing position (" .. workerGPS.x .. ", " .. workerGPS.z .. ")")
+                print("  Worker is outside quarry boundaries!")
             end
         end
         
@@ -574,29 +603,31 @@ local function handleMessage(message)
     elseif message.type == "zone_complete" then
         -- Worker finished mining assigned zone
         state.completedCount = state.completedCount + 1
+        local turtleID = message.turtle_id
         
-        if state.workers[message.turtle_id] then
-            state.workers[message.turtle_id].status = "complete"
-            state.workers[message.turtle_id].final_pos = message.final_pos
+        if state.workers[turtleID] then
+            state.workers[turtleID].status = "complete"
+            state.workers[turtleID].final_pos = message.final_pos
         end
         
-        print("Turtle " .. message.turtle_id .. " completed zone (" .. state.completedCount .. "/" .. state.totalWorkers .. ")")
+        print("Turtle " .. turtleID .. " completed zone (" .. state.completedCount .. "/" .. state.totalWorkers .. ")")
+        
+        if turtleID == state.deployerID then
+            print("  (Deployer)")
+        end
         
         -- All zones complete, initiate cleanup
         if state.completedCount == state.totalWorkers then
-            modem.transmit(BROADCAST_CHANNEL, SERVER_CHANNEL, {
-                type = "all_complete"
-            })
+            print("\n=== All zones complete! ===")
             
+            -- Send cleanup command to deployer
             if state.deployerID then
+                print("Sending cleanup command to deployer...")
                 modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
                     type = "cleanup_command",
-                    turtle_id = state.deployerID,
-                    workers = state.workers
+                    turtle_id = state.deployerID
                 })
             end
-            
-            print("All zones complete! Cleanup initiated.")
         end
         saveState()
         updateDisplay()
@@ -612,22 +643,6 @@ local function handleMessage(message)
         state.workers[message.turtle_id].fuel = message.fuel
         state.workers[message.turtle_id].status = message.status
         updateDisplay()
-        
-    elseif message.type == "worker_registered" then
-        -- Deployer registered a new worker
-        if not state.workers[message.turtle_id] then
-            state.workers[message.turtle_id] = {
-                zone = message.zone,
-                gps_zone = message.gps_zone,
-                status = "initializing",
-                lastUpdate = os.clock(),
-                position = nil,
-                fuel = nil
-            }
-            print("Worker " .. message.turtle_id .. " registered")
-            saveState()
-            updateDisplay()
-        end
         
     elseif message.type == "deployment_complete" then
         -- Deployer finished placing all workers

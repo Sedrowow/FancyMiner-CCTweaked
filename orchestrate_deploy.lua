@@ -7,7 +7,6 @@ os.loadAPI("flex.lua")
 
 local SERVER_CHANNEL = nil
 local BROADCAST_CHANNEL = 65535
-local CHUNK_SIZE = 32768 -- 32KB chunks for file transfer
 
 local state = {
     deployerID = os.getComputerID(),
@@ -18,8 +17,6 @@ local state = {
         fuel = nil,
         output = nil
     },
-    deployedWorkers = {},
-    myZone = nil,
     serverChannel = nil
 }
 
@@ -49,161 +46,6 @@ local function getGPS(retries)
     end
     error("Failed to get GPS coordinates after " .. retries .. " attempts")
 end
-
--- Check for floppy disk and required files
-local function checkDisk()
-    local drive = peripheral.find("drive")
-    if not drive then
-        error("No disk drive found! Deployer requires a floppy disk with firmware.")
-    end
-    
-    if not drive.isDiskPresent() then
-        error("No disk in drive! Insert disk with worker firmware.")
-    end
-    
-    local diskPath = drive.getMountPath()
-    local requiredFiles = {
-        diskPath .. "/worker/quarry.lua",
-        diskPath .. "/worker/dig.lua",
-        diskPath .. "/worker/flex.lua"
-    }
-    
-    for _, file in ipairs(requiredFiles) do
-        if not fs.exists(file) then
-            error("Missing required file: " .. file)
-        end
-    end
-    
-    print("Disk check passed - all firmware files found")
-    return diskPath
-end
-
--- Read file from disk
-local function readDiskFile(diskPath, filename)
-    local fullPath = diskPath .. "/worker/" .. filename
-    local file = fs.open(fullPath, "r")
-    if not file then
-        error("Failed to open " .. fullPath)
-    end
-    local content = file.readAll()
-    file.close()
-    return content
-end
-
--- Split content into chunks
-local function createChunks(content)
-    local chunks = {}
-    local pos = 1
-    while pos <= #content do
-        table.insert(chunks, content:sub(pos, pos + CHUNK_SIZE - 1))
-        pos = pos + CHUNK_SIZE
-    end
-    return chunks
-end
-
--- Send file to worker turtle via modem
-local function transferFile(turtleID, filename, content)
-    local chunks = createChunks(content)
-    local totalChunks = #chunks
-    
-    print("Transferring " .. filename .. " to turtle " .. turtleID .. " (" .. totalChunks .. " chunks)")
-    
-    for i, chunk in ipairs(chunks) do
-        modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
-            type = "file_chunk",
-            turtle_id = turtleID,
-            filename = filename,
-            chunk_num = i,
-            total_chunks = totalChunks,
-            data = chunk
-        })
-        
-        -- Small delay between chunks
-        sleep(0.1)
-    end
-    
-    -- Wait for acknowledgment with timeout
-    local timeout = os.startTimer(30)
-    local ackReceived = false
-    
-    while not ackReceived do
-        local event, p1, p2, p3, message = os.pullEvent()
-        
-        if event == "timer" and p1 == timeout then
-            return false, "Timeout waiting for acknowledgment"
-        elseif event == "modem_message" then
-            if type(message) == "table" and 
-               message.type == "file_received" and 
-               message.turtle_id == turtleID and 
-               message.filename == filename then
-                ackReceived = true
-                os.cancelTimer(timeout)
-            end
-        end
-    end
-    
-    return true
-end
-
--- Bootstrap code to inject into workers
-local BOOTSTRAP_CODE = [[
--- Bootstrap loader for worker turtles
-local BROADCAST_CHANNEL = 65535
-local turtleID = os.getComputerID()
-print("Worker Bootstrap - ID: " .. turtleID)
-print("Waiting for firmware...")
-local modem = peripheral.find("ender_modem")
-if not modem then modem = peripheral.find("modem") end
-if not modem then error("No modem found!") end
-modem.open(BROADCAST_CHANNEL)
-local fileChunks = {}
-local filesReceived = {}
-local requiredFiles = {"quarry.lua", "dig.lua", "flex.lua"}
-local function checkAllFilesReceived()
-    for _, filename in ipairs(requiredFiles) do
-        if not filesReceived[filename] then return false end
-    end
-    return true
-end
-while true do
-    local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
-    if type(message) == "table" and message.type == "file_chunk_broadcast" then
-        local filename = message.filename
-        local isRequired = false
-        for _, req in ipairs(requiredFiles) do
-            if req == filename then isRequired = true; break end
-        end
-        if isRequired then
-            if not fileChunks[filename] then
-                fileChunks[filename] = {}
-                print("Receiving " .. filename .. "...")
-            end
-            fileChunks[filename][message.chunk_num] = message.data
-            local complete = true
-            for i = 1, message.total_chunks do
-                if not fileChunks[filename][i] then complete = false; break end
-            end
-            if complete and not filesReceived[filename] then
-                local content = table.concat(fileChunks[filename])
-                local file = fs.open(filename, "w")
-                file.write(content)
-                file.close()
-                filesReceived[filename] = true
-                print("Received: " .. filename)
-                if checkAllFilesReceived() then
-                    print("All firmware received!")
-                    break
-                end
-            end
-        end
-    end
-end
-print("Loading APIs...")
-os.loadAPI("dig.lua")
-os.loadAPI("flex.lua")
-print("Starting worker quarry program...")
-shell.run("quarry.lua")
-]]
 
 -- Deploy a single worker turtle
 -- Ensure we have at least 8 fuel in slot 1
@@ -344,11 +186,12 @@ local function deploy()
     print("Enter skip depth (0 for none):")
     local skip = tonumber(read())
     
-    -- Send deployment request to server
+    -- Send deployment request to server (include deployer as a worker)
     modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
         type = "deploy_request",
         deployer_id = state.deployerID,
-        num_workers = #turtleSlots,
+        num_workers = #turtleSlots + 1,  -- +1 for deployer itself
+        is_deployer = true,
         quarry_params = {
             width = width,
             length = length,
@@ -419,12 +262,12 @@ local function deploy()
         start_gps = state.startGPS
     })
     
-    print("Chests placed and registered with server")
+    print(\"Chests placed and registered with server\")
+    print(\"Server will load firmware from its disk drive\")
     
     -- Wait for fuel to be placed in fuel chest
-    print("\n=== Waiting for fuel ===")
-    print("Please place fuel in the fuel chest")
-    print("(The chest one block east and above starting position)")
+    print(\"\\n=== Waiting for fuel ===\")
+    print(\"Please place fuel in the fuel chest\")
     
     dig.goto(1, 1, 0, 0) -- Move to fuel chest position (X+1, Y+1)
     dig.gotor(270) -- Face west toward chest
@@ -442,8 +285,7 @@ local function deploy()
     -- Return to start position
     dig.goto(0, 0, 0, 0)
     
-    print("\nReady to deploy workers...")
-    print("Firmware will be broadcast by orchestration server")
+    print(\"\\nReady to deploy workers...\")
     
     -- Deploy each worker turtle
     print("\n=== Deploying Workers ===\n")
@@ -456,14 +298,6 @@ local function deploy()
         local success, err = deployWorker(slot, zone, i)
         if not success then
             print("Warning: " .. err)
-        else
-            -- Note: We'll handle file transfer after getting worker ID via handshake
-            table.insert(state.deployedWorkers, {
-                slot = slot,
-                zone = zone,
-                gps_zone = calculateGPSZone(zone, state.startGPS),
-                index = i
-            })
         end
     end
     
@@ -509,32 +343,89 @@ local function deploy()
         print("Fueled successfully with " .. turtle.getItemCount(1) .. " fuel")
     end
     
-    print("\nWaiting for all workers to report ready...")
-    print("Then this turtle will join as a worker.\n")
+    print("\n=== Transitioning to Worker Mode ===\n")
     
-    -- Save my zone (last one if odd number, or create one)
-    if #state.zones > #turtleSlots then
-        state.myZone = state.zones[#state.zones]
-        state.myZone.gps_zone = calculateGPSZone(state.myZone, state.startGPS)
-    end
+    -- Deployer gets the last zone
+    local deployerZone = state.zones[#state.zones]
+    print("Deployer will mine zone " .. #state.zones)
+    print("Zone: X=" .. deployerZone.xmin .. "-" .. deployerZone.xmax .. ", Z=" .. deployerZone.zmin .. "-" .. deployerZone.zmax)
     
-    return state.myZone
+    -- Navigate to deployer's zone starting position
+    print("\nMoving to zone starting position...")
+    dig.goto(deployerZone.xmin, 0, 0, 0)
+    print("Arrived at zone " .. #state.zones .. " starting position")
+    
+    print("\nStarting worker bootstrap process...")
+    print("Deployer will now operate as a worker turtle")
+    sleep(1)
 end
 
 -- Run deployment
-local success, myZone = pcall(deploy)
+local success, err = pcall(deploy)
 
 if not success then
-    print("\nDeployment failed: " .. tostring(myZone))
-    error(myZone)
+    print("\nDeployment failed: " .. tostring(err))
+    error(err)
 end
 
-print("\nDeployment successful!")
-if myZone then
-    print("This turtle will mine zone: X=" .. myZone.xmin .. "-" .. myZone.xmax)
-    print("\nPress any key to continue as worker...")
-    os.pullEvent("key")
+print("\nDeployment successful! Becoming worker...")
+
+-- Load and run bootstrap to join as worker
+if fs.exists("bootstrap.lua") then
+    shell.run("bootstrap.lua")
     
-    -- Continue to worker mode
-    shell.run("quarry", myZone.xmax - myZone.xmin + 1, myZone.zmax - myZone.zmin + 1, myZone.ymin)
+    -- Bootstrap/quarry completed - deployer is now waiting for cleanup command
+    print("\n=== Worker Phase Complete ===")
+    print("Deployer finished mining zone")
+    print("Waiting for cleanup command from server...")
+    
+    -- Wait for cleanup command
+    modem.open(SERVER_CHANNEL)
+    
+    while true do
+        local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
+        
+        if type(message) == "table" then
+            if message.type == "cleanup_command" and message.turtle_id == state.deployerID then
+                print("\n=== Cleanup Command Received ===")
+                print("Starting worker collection...")
+                
+                -- Navigate to each worker's starting position and collect them
+                -- Workers are at their zone starting positions (zone.xmin, 0, 0)
+                for i = 1, #state.zones - 1 do  -- Exclude last zone (deployer's zone)
+                    local zone = state.zones[i]
+                    local workerX = zone.xmin
+                    
+                    print("\nCollecting worker " .. i .. "...")
+                    print("  Navigating to position X=" .. workerX)
+                    
+                    -- Navigate to worker position
+                    dig.goto(workerX, 0, 0, 0)
+                    
+                    -- Worker should be below us at ground level
+                    local success, data = turtle.inspectDown()
+                    if success and data.name and data.name:find("turtle") then
+                        print("  Found turtle, breaking...")
+                        turtle.digDown()
+                        print("  Worker " .. i .. " collected")
+                    else
+                        print("  Warning: No turtle found at position")
+                    end
+                end
+                
+                -- Return to initial starting position
+                print("\nReturning to starting position...")
+                dig.goto(0, 0, 0, 0)
+                
+                print("\n=== Cleanup Complete ===")
+                print("All workers collected")
+                print("Deployer at starting position")
+                print("Chests remain in place for future use")
+                break
+            end
+        end
+    end
+else
+    print("Error: bootstrap.lua not found!")
+    print("Deployer cannot transition to worker mode.")
 end

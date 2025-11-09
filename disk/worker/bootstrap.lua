@@ -128,10 +128,21 @@ while not allFilesReceived do
                     if allFilesReceived then
                         print("\nAll firmware received!")
                         
-                        -- Notify server that we're ready
+                        -- Get GPS position for zone matching
+                        print("Getting GPS position...")
+                        local gpsX, gpsY, gpsZ = gps.locate(5)
+                        
+                        if not gpsX then
+                            error("Failed to get GPS coordinates")
+                        end
+                        
+                        print("Position: " .. gpsX .. ", " .. gpsY .. ", " .. gpsZ)
+                        
+                        -- Notify server with GPS position
                         modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
                             type = "firmware_complete",
-                            turtle_id = turtleID
+                            turtle_id = turtleID,
+                            gps_position = {x = gpsX, y = gpsY, z = gpsZ}
                         })
                         
                         break

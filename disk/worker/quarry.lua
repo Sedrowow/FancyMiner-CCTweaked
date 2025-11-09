@@ -567,8 +567,33 @@ else
     print("To use coordinated mode, deploy via orchestrate_deploy.lua")
 end
 
--- Send completion message
+-- Completion sequence
 if config.isCoordinated then
+    print("\n=== Zone Mining Complete ===")
+    print("Dumping remaining inventory...")
+    
+    -- Request output chest access to dump remaining items
+    local dumpSuccess = queuedResourceAccess("output", function()
+        -- Dump all remaining items
+        for slot = 1, 16 do
+            if turtle.getItemCount(slot) > 0 then
+                turtle.select(slot)
+                turtle.dropUp()
+            end
+        end
+        print("Inventory dumped")
+    end)
+    
+    if not dumpSuccess then
+        print("Warning: Could not dump final inventory")
+    end
+    
+    -- Return to starting position
+    print("Returning to starting position...")
+    dig.goto(config.startPos.x, config.startPos.y, config.startPos.z, 0)
+    print("Arrived at starting position")
+    
+    -- Send completion message
     sendStatusUpdate("complete")
     modem.transmit(config.serverChannel, config.serverChannel, {
         type = "zone_complete",
@@ -579,4 +604,8 @@ if config.isCoordinated then
             z = dig.getz()
         }
     })
+    
+    print("Completion reported to server")
+    print("Worker standing by...")
+    -- Exit and return control (to deployer script if deployer, or just finish if regular worker)
 end

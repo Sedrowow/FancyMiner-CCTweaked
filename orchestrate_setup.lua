@@ -35,7 +35,7 @@ local function setupWorkerTurtle()
     print("Downloading bootstrap loader...")
     
     local url = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/disk/worker/bootstrap.lua"
-    local success = shell.run("wget", url, "startup.lua")
+    local success = shell.run("wget", "-f", url, "startup.lua")
     
     if success then
         print()
@@ -82,7 +82,7 @@ local function setupDeploymentTurtle()
     
     for _, file in ipairs(files) do
         print("Downloading " .. file.name .. "...")
-        local success = shell.run("wget", baseUrl .. file.url, file.name)
+        local success = shell.run("wget", "-f", baseUrl .. file.url, file.name)
         if not success then
             print("ERROR: Failed to download " .. file.name)
             return false
@@ -118,7 +118,7 @@ local function setupOrchestrationServer()
     print("Downloading orchestration server...")
     
     local url = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/orchestrate_server.lua"
-    local success = shell.run("wget", url, "server.lua")
+    local success = shell.run("wget", "-f", url, "server.lua")
     
     if success then
         print()
@@ -178,7 +178,7 @@ local function setupFirmwareDisk()
     
     for _, filename in ipairs(files) do
         print("Downloading " .. filename .. "...")
-        local success = shell.run("wget", baseUrl .. filename, mountPath .. "/worker/" .. filename)
+        local success = shell.run("wget", "-f", baseUrl .. filename, mountPath .. "/worker/" .. filename)
         if not success then
             print("ERROR: Failed to download " .. filename)
             return false
