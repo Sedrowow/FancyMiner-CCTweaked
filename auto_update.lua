@@ -84,5 +84,5 @@ local function checkVersion()
     return false
 end
 
--- Export the check function so it can be called from startup
-return checkVersion
+-- Run the check automatically when the script is executed
+checkVersion()
