@@ -207,8 +207,16 @@ end
 
 -- Save state to disk
 local function saveState()
+    -- Create a copy without firmware cache (too large and can be reloaded)
+    local stateCopy = {}
+    for k, v in pairs(state) do
+        if k ~= "firmwareCache" then
+            stateCopy[k] = v
+        end
+    end
+    
     local file = fs.open(STATE_FILE, "w")
-    file.write(textutils.serialize(state))
+    file.write(textutils.serialize(stateCopy))
     file.close()
 end
 
