@@ -606,30 +606,6 @@ if config.isCoordinated then
     dig.doBlacklist()
     dig.doAttack()
     
-    -- Always wait for start signal from server (both fresh start and restart)
-    if not config.miningStarted then
-        log("Waiting for start signal from server...")
-    else
-        log("Resuming from saved state - waiting for start signal...")
-        -- Reset flag so we wait for signal again
-        config.miningStarted = false
-        saveState()
-    end
-    
-    modem.open(config.serverChannel)
-    modem.open(config.broadcastChannel)
-    
-    while not config.miningStarted do
-        local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
-        if type(message) == "table" and message.type == "start_mining" then
-            log("Start signal received!")
-            config.miningStarted = true
-            saveState()
-            sendStatusUpdate("mining")
-            break
-        end
-    end
-    
     -- Run quarry with zone constraints
     log("\n=== Starting Zone Mining ===")
     local width = config.zone.xmax - config.zone.xmin + 1
