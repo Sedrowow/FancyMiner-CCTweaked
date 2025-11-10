@@ -12,6 +12,8 @@ local state = {
     outputQueue = {},
     fuelLock = false,
     outputLock = false,
+    fuelLockTime = nil, -- Time when fuel lock was granted
+    outputLockTime = nil, -- Time when output lock was granted
     readyCount = 0,
     totalWorkers = 0,
     deployerID = nil,
@@ -32,6 +34,9 @@ local state = {
     deploymentComplete = false, -- Whether initial deployment finished
     firmwareLoaded = false -- Whether firmware is loaded from disk
 }
+
+-- Resource timeout in seconds (5 minutes)
+local RESOURCE_TIMEOUT = 300
 
 local STATE_FILE = "orchestrate_state.cfg"
 
@@ -103,10 +108,135 @@ local function write(text)
     end
 end
 
+-- Current view state
+local viewState = {
+    mode = "main", -- "main" or "worker"
+    selectedWorker = nil
+}
+
 local function updateDisplay()
     clearDisplay()
     setCursorPos(1, 1)
     
+    if viewState.mode == "worker" and viewState.selectedWorker then
+        -- Worker detail view
+        local worker = state.workers[viewState.selectedWorker]
+        if not worker then
+            viewState.mode = "main"
+            updateDisplay()
+            return
+        end
+        
+        setColor(colors.white)
+        write("=== Worker " .. viewState.selectedWorker .. " Details ===")
+        setCursorPos(1, 2)
+        setColor(colors.yellow)
+        write("[Touch anywhere to return]")
+        setCursorPos(1, 3)
+        write("----------------------------")
+        
+        local line = 4
+        setColor(colors.white)
+        
+        -- Status
+        setCursorPos(1, line)
+        write("Status: ")
+        if worker.status == "complete" then
+            setColor(colors.lime)
+        elseif worker.status == "timeout" then
+            setColor(colors.red)
+        elseif worker.status == "mining" then
+            setColor(colors.lightBlue)
+        elseif worker.status == "queued" then
+            setColor(colors.yellow)
+        else
+            setColor(colors.lightGray)
+        end
+        write(worker.status or "Unknown")
+        line = line + 1
+        
+        -- GPS Position
+        if worker.gps_position then
+            setColor(colors.white)
+            setCursorPos(1, line)
+            write("GPS Position:")
+            line = line + 1
+            setColor(colors.lightGray)
+            setCursorPos(3, line)
+            write(string.format("X: %.1f", worker.gps_position.x or 0))
+            line = line + 1
+            setCursorPos(3, line)
+            write(string.format("Y: %.1f", worker.gps_position.y or 0))
+            line = line + 1
+            setCursorPos(3, line)
+            write(string.format("Z: %.1f", worker.gps_position.z or 0))
+            line = line + 1
+        end
+        
+        -- Dig Position
+        if worker.position then
+            line = line + 1
+            setColor(colors.white)
+            setCursorPos(1, line)
+            write("Dig Coordinates:")
+            line = line + 1
+            setColor(colors.lightGray)
+            setCursorPos(3, line)
+            write(string.format("X: %d", worker.position.x or 0))
+            line = line + 1
+            setCursorPos(3, line)
+            write(string.format("Y: %d", worker.position.y or 0))
+            line = line + 1
+            setCursorPos(3, line)
+            write(string.format("Z: %d", worker.position.z or 0))
+            line = line + 1
+        end
+        
+        -- Fuel
+        if worker.fuel then
+            line = line + 1
+            setColor(colors.white)
+            setCursorPos(1, line)
+            write("Fuel Level: ")
+            setColor(colors.orange)
+            write(tostring(worker.fuel))
+            line = line + 1
+        end
+        
+        -- Zone assignment
+        if worker.zone then
+            line = line + 1
+            setColor(colors.white)
+            setCursorPos(1, line)
+            write("Zone Assignment:")
+            line = line + 1
+            setColor(colors.lightGray)
+            setCursorPos(3, line)
+            write(string.format("X: %d to %d", worker.zone.xmin or 0, worker.zone.xmax or 0))
+            line = line + 1
+            setCursorPos(3, line)
+            write(string.format("Z: %d to %d", worker.zone.zmin or 0, worker.zone.zmax or 0))
+            line = line + 1
+            setCursorPos(3, line)
+            write(string.format("Y: %d to %d", worker.zone.ymax or 0, worker.zone.ymin or 0))
+            line = line + 1
+        end
+        
+        -- Last update time
+        if worker.lastUpdate then
+            line = line + 1
+            setColor(colors.white)
+            setCursorPos(1, line)
+            write("Last Update: ")
+            setColor(colors.lightGray)
+            local elapsed = math.floor(os.clock() - worker.lastUpdate)
+            write(elapsed .. "s ago")
+        end
+        
+        return
+    end
+    
+    -- Main view (existing code)
     -- Header
     setColor(colors.white)
     write("=== Orchestration Server ===")
@@ -120,6 +250,9 @@ local function updateDisplay()
     -- Worker status
     local line = 5
     local workerList = {}
+    -- Track which line each worker is on for touch detection
+    local workerLines = {}
+    
     for id, worker in pairs(state.workers) do
         table.insert(workerList, {id = id, worker = worker})
     end
@@ -133,11 +266,16 @@ local function updateDisplay()
         local id = entry.id
         local worker = entry.worker
         
+        -- Store line number for this worker
+        workerLines[line] = id
+        
         setCursorPos(1, line)
         
         -- Status color coding
         if worker.status == "complete" then
             setColor(colors.lime)
+        elseif worker.status == "timeout" then
+            setColor(colors.red)
         elseif worker.status == "mining" then
             setColor(colors.lightBlue)
         elseif worker.status == "queued" or worker.status == "accessing_resource" then
@@ -155,6 +293,9 @@ local function updateDisplay()
         setColor(colors.white)
         if worker.status == "complete" then
             write("DONE")
+        elseif worker.status == "timeout" then
+            setColor(colors.red)
+            write("TIMEOUT")
         elseif worker.status == "mining" then
             write("Mining")
         elseif worker.status == "queued" then
@@ -212,6 +353,9 @@ local function updateDisplay()
         setColor(colors.lightGray)
         write("Status: Waiting...")
     end
+    
+    -- Return worker line mapping for touch detection
+    return workerLines
 end
 
 -- Save state to disk
@@ -346,13 +490,42 @@ local function calculateZones(width, length, depth, skip, numWorkers)
 end
 
 -- Grant resource access to next turtle in queue
+-- Check for resource timeout and force release if needed
+local function checkResourceTimeout(resourceType)
+    local lockKey = (resourceType == "fuel") and "fuelLock" or "outputLock"
+    local timeKey = (resourceType == "fuel") and "fuelLockTime" or "outputLockTime"
+    
+    if state[lockKey] and state[timeKey] then
+        local elapsed = os.clock() - state[timeKey]
+        if elapsed > RESOURCE_TIMEOUT then
+            print("WARNING: Turtle " .. state[lockKey] .. " timed out on " .. resourceType .. " (" .. math.floor(elapsed) .. "s)")
+            print("Force-releasing " .. resourceType .. " lock...")
+            
+            local timedOutTurtle = state[lockKey]
+            state[lockKey] = false
+            state[timeKey] = nil
+            
+            if state.workers[timedOutTurtle] then
+                state.workers[timedOutTurtle].status = "timeout"
+            end
+            
+            -- Grant to next in queue
+            grantNextResource(resourceType)
+            return true
+        end
+    end
+    return false
+end
+
 local function grantNextResource(resourceType)
     local queue = (resourceType == "fuel") and state.fuelQueue or state.outputQueue
     local lockKey = (resourceType == "fuel") and "fuelLock" or "outputLock"
+    local timeKey = (resourceType == "fuel") and "fuelLockTime" or "outputLockTime"
     
     if #queue > 0 and not state[lockKey] then
         local nextTurtle = table.remove(queue, 1)
         state[lockKey] = nextTurtle
+        state[timeKey] = os.clock()
         
         local chestPos = state.chestPositions[resourceType]
         -- Both chests are at Y=1, workers access from below at Y=0
@@ -666,6 +839,8 @@ local function handleMessage(message)
         if not state[lockKey] then
             -- Resource available, grant immediately
             state[lockKey] = message.turtle_id
+            local timeKey = (resourceType == "fuel") and "fuelLockTime" or "outputLockTime"
+            state[timeKey] = os.clock()
             
             local chestPos = state.chestPositions[resourceType]
             -- Both chests are at Y=1, workers access from below at Y=0
@@ -704,8 +879,10 @@ local function handleMessage(message)
         -- Turtle finished with resource
         local resourceType = message.resource
         local lockKey = (resourceType == "fuel") and "fuelLock" or "outputLock"
+        local timeKey = (resourceType == "fuel") and "fuelLockTime" or "outputLockTime"
         
         state[lockKey] = false
+        state[timeKey] = nil
         
         if state.workers[message.turtle_id] then
             state.workers[message.turtle_id].status = "mining"
@@ -876,14 +1053,57 @@ local function main()
     print("Press Ctrl+T to stop\n")
     
     -- Initial display
-    updateDisplay()
+    local workerLines = updateDisplay()
+    
+    -- Start timeout check timer
+    local timeoutCheckTimer = os.startTimer(10) -- Check every 10 seconds
     
     while true do
         local event, p1, p2, p3, p4, p5 = os.pullEvent()
         
+        -- Check for resource timeouts periodically
+        if event == "timer" and p1 == timeoutCheckTimer then
+            checkResourceTimeout("fuel")
+            checkResourceTimeout("output")
+            timeoutCheckTimer = os.startTimer(10)
+        end
+        
         if event == "modem_message" then
             local side, channel, replyChannel, message, distance = p1, p2, p3, p4, p5
             handleMessage(message)
+            -- handleMessage calls updateDisplay(), but we need to capture workerLines
+            -- Only update workerLines if we're in main view
+            if viewState.mode == "main" then
+                -- Display was already updated by handleMessage, just need to recalculate workerLines
+                local tempWorkerLines = {}
+                local line = 5
+                local tempWorkerList = {}
+                for id, worker in pairs(state.workers) do
+                    table.insert(tempWorkerList, {id = id, worker = worker})
+                end
+                table.sort(tempWorkerList, function(a, b) return a.id < b.id end)
+                for _, entry in ipairs(tempWorkerList) do
+                    if line >= displayHeight - 1 then break end
+                    tempWorkerLines[line] = entry.id
+                    line = line + 1
+                end
+                workerLines = tempWorkerLines
+            end
+            
+        elseif event == "monitor_touch" or event == "mouse_click" then
+            local side, x, y = p1, p2, p3
+            
+            if viewState.mode == "worker" then
+                -- Any touch in worker view returns to main
+                viewState.mode = "main"
+                viewState.selectedWorker = nil
+                workerLines = updateDisplay()
+            elseif viewState.mode == "main" and workerLines and workerLines[y] then
+                -- Touch on a worker line - show details
+                viewState.mode = "worker"
+                viewState.selectedWorker = workerLines[y]
+                updateDisplay()
+            end
             
         elseif event == "key" then
             local key = p1
@@ -902,7 +1122,7 @@ local function main()
                 
                 print("Abort command sent. Waiting for workers to return...")
                 saveState()
-                updateDisplay()
+                workerLines = updateDisplay()
             end
         end
     end
