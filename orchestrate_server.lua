@@ -510,35 +510,34 @@ local function handleMessage(message)
                     
                     -- Calculate initial cardinal direction based on chest positions
                     -- Deployer places fuel chest at X+1 from output chest (dig.goto(1,0,0,90))
-                    -- This means fuel chest is in the +X direction from output chest
-                    -- Workers are placed with rotation 180 (facing toward +Z in dig.lua coordinates)
-                    -- We need to determine which cardinal direction corresponds to +Z in the deployed coordinate system
+                    -- This means fuel chest is in the +X direction from output chest in dig.lua coordinates
+                    -- Workers are placed with rotation 180 which faces OPPOSITE to the +X direction
+                    -- So if fuel is east of output (+X = east), workers face west
                     local initialDirection = "south" -- default
                     if state.chestPositions and state.chestPositions.fuel and state.chestPositions.output then
                         local deltaX = state.chestPositions.fuel.x - state.chestPositions.output.x
                         local deltaZ = state.chestPositions.fuel.z - state.chestPositions.output.z
                         
                         -- Fuel chest is at +1 X in dig.lua coordinates
-                        -- Determine which cardinal direction that corresponds to
+                        -- Workers face rotation 180 = opposite direction of +X
                         if math.abs(deltaX) > math.abs(deltaZ) then
                             if deltaX > 0 then
                                 -- Fuel is east of output, so dig.lua +X = cardinal east
-                                -- Workers face rotation 180 (dig.lua +Z) which is 90 degrees CCW from +X
-                                -- So they face cardinal north
-                                initialDirection = "north"
+                                -- Workers face opposite direction: west
+                                initialDirection = "south"
                             else
                                 -- Fuel is west of output, so dig.lua +X = cardinal west
-                                -- Workers face cardinal south
-                                initialDirection = "south"
+                                -- Workers face opposite direction: east
+                                initialDirection = "north"
                             end
                         else
                             if deltaZ > 0 then
                                 -- Fuel is south of output, so dig.lua +X = cardinal south
-                                -- Workers face cardinal east
+                                -- Workers face opposite direction: north
                                 initialDirection = "east"
                             else
                                 -- Fuel is north of output, so dig.lua +X = cardinal north
-                                -- Workers face cardinal west
+                                -- Workers face opposite direction: south
                                 initialDirection = "west"
                             end
                         end
@@ -586,14 +585,17 @@ local function handleMessage(message)
         
     elseif message.type == "worker_ready" then
         -- Worker finished initialization
+        local wasReady = state.workers[message.turtle_id] and state.workers[message.turtle_id].status == "ready"
+        
         if not state.workers[message.turtle_id] then
             state.workers[message.turtle_id] = {}
         end
         
-        -- Only increment if not already counted as ready
-        if state.workers[message.turtle_id].status ~= "ready" then
+        -- Only increment if this worker wasn't already counted as ready
+        if not wasReady then
             state.readyCount = state.readyCount + 1
         end
+        
         state.workers[message.turtle_id].status = "ready"
         
         print("Worker " .. message.turtle_id .. " ready (" .. state.readyCount .. "/" .. state.totalWorkers .. ")")
