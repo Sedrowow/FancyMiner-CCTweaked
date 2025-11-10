@@ -508,12 +508,45 @@ local function handleMessage(message)
                     gpsZone.turtle_id = turtleID
                     matchedZone = i
                     
-                    -- Calculate initial cardinal direction based on worker deployment
-                    -- Workers are placed facing south (toward +Z) by the deployer
-                    local initialDirection = "south"
+                    -- Calculate initial cardinal direction based on chest positions
+                    -- Deployer places fuel chest at X+1 from output chest (dig.goto(1,0,0,90))
+                    -- This means fuel chest is in the +X direction from output chest
+                    -- Workers are placed with rotation 180 (facing toward +Z in dig.lua coordinates)
+                    -- We need to determine which cardinal direction corresponds to +Z in the deployed coordinate system
+                    local initialDirection = "south" -- default
+                    if state.chestPositions and state.chestPositions.fuel and state.chestPositions.output then
+                        local deltaX = state.chestPositions.fuel.x - state.chestPositions.output.x
+                        local deltaZ = state.chestPositions.fuel.z - state.chestPositions.output.z
+                        
+                        -- Fuel chest is at +1 X in dig.lua coordinates
+                        -- Determine which cardinal direction that corresponds to
+                        if math.abs(deltaX) > math.abs(deltaZ) then
+                            if deltaX > 0 then
+                                -- Fuel is east of output, so dig.lua +X = cardinal east
+                                -- Workers face rotation 180 (dig.lua +Z) which is 90 degrees CCW from +X
+                                -- So they face cardinal north
+                                initialDirection = "north"
+                            else
+                                -- Fuel is west of output, so dig.lua +X = cardinal west
+                                -- Workers face cardinal south
+                                initialDirection = "south"
+                            end
+                        else
+                            if deltaZ > 0 then
+                                -- Fuel is south of output, so dig.lua +X = cardinal south
+                                -- Workers face cardinal east
+                                initialDirection = "east"
+                            else
+                                -- Fuel is north of output, so dig.lua +X = cardinal north
+                                -- Workers face cardinal west
+                                initialDirection = "west"
+                            end
+                        end
+                    end
                     
-                    -- Update worker record with zone info
-                    state.workers[turtleID].zone = state.zones[i]
+                    print("  Calculated initial direction: " .. initialDirection)
+                    
+                    -- Update worker record with zone info (just store zone index, not the table itself)
                     state.workers[turtleID].zone_index = i
                     state.workers[turtleID].status = "assigned"
                     
