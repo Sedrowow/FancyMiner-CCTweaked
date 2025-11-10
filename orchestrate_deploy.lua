@@ -152,16 +152,13 @@ local function deploy()
                 break
             elseif event == "modem_message" then
                 local message = p4
-                if type(message) == "table" and message.type == "restart_response" and message.deployer_id == state.deployerID then
+                if message.type == "restart_response" and message.deployer_id == state.deployerID then
                     os.cancelTimer(timeout)
                     
                     if message.deployment_complete then
-                        print("Deployment already complete, transitioning to worker mode")
+                        print("Deployment complete, transitioning to worker mode")
                         state.deploymentComplete = true
-                        return -- Skip deployment, go straight to worker mode
-                    else
-                        print("Server says deployment incomplete, resuming...")
-                        -- Continue with deployment
+                        return
                     end
                     break
                 end

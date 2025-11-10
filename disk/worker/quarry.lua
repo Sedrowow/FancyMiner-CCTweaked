@@ -97,29 +97,7 @@ local function getGPS(retries)
     return nil
 end
 
-local function validateInZone()
-    if not config.isCoordinated or not config.gps_zone then
-        return true -- Not in coordinated mode
-    end
-    
-    local currentGPS = getGPS(3)
-    if not currentGPS then
-        log("Warning: GPS unavailable for zone validation")
-        return true -- Assume okay if GPS fails
-    end
-    
-    local inZone = currentGPS.x >= config.gps_zone.gps_xmin and
-                   currentGPS.x <= config.gps_zone.gps_xmax and
-                   currentGPS.z >= config.gps_zone.gps_zmin and
-                   currentGPS.z <= config.gps_zone.gps_zmax
-    
-    if not inZone then
-        flex.send("Warning: Outside assigned zone! GPS: " .. 
-                  textutils.serialize(currentGPS), colors.red)
-    end
-    
-    return inZone
-end
+-- Zone validation removed - GPS navigation inherently bounds movement to zone
 
 -- Send status update to server
 local function sendStatusUpdate(status)
@@ -234,9 +212,6 @@ local function queuedResourceAccess(resourceType, returnPos)
         log("Will return to custom position: " .. textutils.serialize(returnPos))
     end
     
-    -- Validate we're in zone before leaving
-    validateInZone()
-    
     -- Request access
     local success, chestPos, approachDir = requestResourceAccess(resourceType)
     if not success then
@@ -331,9 +306,6 @@ local function queuedResourceAccess(resourceType, returnPos)
         dig.setr(savedRotation)
         log("dig.lua rotation set to: " .. dig.getr())
     end
-    
-    -- Validate we're back in zone
-    validateInZone()
     
     -- Release resource
     releaseResource(resourceType)
@@ -451,18 +423,6 @@ local function initializeWorker()
                     log("  Output: (" .. config.chestGPS.output.x .. ", " .. config.chestGPS.output.y .. ", " .. config.chestGPS.output.z .. ")")
                     log("  Fuel: (" .. config.chestGPS.fuel.x .. ", " .. config.chestGPS.fuel.y .. ", " .. config.chestGPS.fuel.z .. ")")
                     
-                    -- Verify we're in the right zone (optional validation)
-                    local inZone = currentGPS.x >= message.gps_zone.gps_xmin and
-                                 currentGPS.x <= message.gps_zone.gps_xmax and
-                                 currentGPS.z >= message.gps_zone.gps_zmin and
-                                 currentGPS.z <= message.gps_zone.gps_zmax
-                    
-                    if not inZone then
-                        log("Warning: Current position outside assigned zone!")
-                        log("Expected zone: X=" .. message.gps_zone.gps_xmin .. "-" .. message.gps_zone.gps_xmax)
-                        log("Current position: X=" .. currentGPS.x .. ", Z=" .. currentGPS.z)
-                    end
-                    
                     gotAssignment = true
                     os.cancelTimer(initTimeout)
                     
@@ -567,17 +527,9 @@ local function calculateFuelThreshold()
 end
 
 -- Main execution
--- Always try to initialize as coordinated worker
--- If we're deployed, we'll get zone assignments
--- If standalone, this will fail/timeout and we skip to standalone mode
+initializeWorker()
 
-local coordinatedMode = false
-local initSuccess = pcall(function()
-    initializeWorker()
-    coordinatedMode = true
-end)
-
-if coordinatedMode then
+if config.isCoordinated then
     -- Calculate fuel threshold based on zone dimensions
     fuelThreshold = calculateFuelThreshold()
     
