@@ -159,8 +159,15 @@ local function deploy()
                         print("Deployment complete, transitioning to worker mode")
                         state.deploymentComplete = true
                         return
+                    else
+                        -- Deployment wasn't complete - either aborted or in progress
+                        -- Since deployer state is not granular enough to resume mid-deployment,
+                        -- we start fresh
+                        print("Previous deployment incomplete, starting fresh")
+                        state = {deployerID = os.getComputerID()}
+                        fs.delete(STATE_FILE)
+                        break
                     end
-                    break
                 end
             end
         end

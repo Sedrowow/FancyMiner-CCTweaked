@@ -727,22 +727,28 @@ local function handleMessage(message)
         print("Deployer " .. message.deployer_id .. " restarted, sending status...")
         
         local deploymentComplete = false
+        local deploymentActive = false
+        
         if state.deployerID == message.deployer_id then
             -- Check if deployment was already done
             deploymentComplete = (state.chestPositions.fuel ~= nil and state.chestPositions.output ~= nil)
+            
+            -- Deployment is active if it started but hasn't been aborted and isn't complete
+            deploymentActive = not deploymentComplete and not state.aborted and state.chestPositions.fuel ~= nil
         end
         
         modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
             type = "restart_response",
             deployer_id = message.deployer_id,
             deployment_complete = deploymentComplete,
+            deployment_active = deploymentActive,
             zones = state.zones,
             chest_gps = state.chestPositions,
             start_gps = state.startGPS,
             server_channel = SERVER_CHANNEL
         })
         
-        print("Sent restart response: deployment_complete=" .. tostring(deploymentComplete))
+        print("Sent restart response: complete=" .. tostring(deploymentComplete) .. ", active=" .. tostring(deploymentActive))
         
     elseif message.type == "deployment_complete" then
         -- Deployer finished placing all workers
@@ -751,6 +757,19 @@ local function handleMessage(message)
         print("Waiting for workers to come online and download firmware...")
         saveState()
         updateDisplay()
+        
+    elseif message.type == "worker_status_check" then
+        -- Worker checking if there's an active job
+        local turtleID = message.turtle_id
+        local jobActive = state.deploymentComplete and not state.aborted and state.completedCount < state.totalWorkers
+        
+        print("Worker " .. turtleID .. " status check - job active: " .. tostring(jobActive))
+        
+        modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
+            type = "job_status_response",
+            turtle_id = turtleID,
+            job_active = jobActive
+        })
         
     elseif message.type == "abort_ack" then
         -- Worker acknowledged abort command

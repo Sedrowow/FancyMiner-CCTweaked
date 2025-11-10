@@ -320,27 +320,88 @@ local function initializeWorker()
     
     -- Check if we're restarting from previous state
     if loadState() then
-        log("Found previous state - resuming from saved position")
+        log("Found previous state - checking with server...")
         log("Position: X=" .. dig.getx() .. " Y=" .. dig.gety() .. " Z=" .. dig.getz())
         log("Rotation: " .. dig.getr())
         if dig.getCardinalDir() then
             log("Direction: " .. dig.getCardinalDir())
         end
         
-        if config.isCoordinated and config.zone then
+        if config.isCoordinated and config.zone and config.serverChannel then
             modem.open(config.broadcastChannel)
             modem.open(config.serverChannel)
             
-            -- Re-initialize GPS navigation - gps_nav.init() will get current GPS
-            -- but we keep our original startGPS from the saved state
-            if config.startGPS then
-                gps_nav.init()
-                log("GPS initialized - preserved start position: " .. 
-                    config.startGPS.x .. "," .. config.startGPS.y .. "," .. config.startGPS.z)
+            -- Ask server if there's an active job
+            log("Asking server about job status...")
+            modem.transmit(config.serverChannel, config.serverChannel, {
+                type = "worker_status_check",
+                turtle_id = config.turtleID
+            })
+            
+            -- Wait for server response with timeout
+            local timeout = os.startTimer(10)
+            local jobActive = false
+            local gotResponse = false
+            
+            while not gotResponse do
+                local event, p1, p2, p3, p4 = os.pullEvent()
+                
+                if event == "timer" and p1 == timeout then
+                    log("Server not responding - assuming no active job")
+                    break
+                elseif event == "modem_message" then
+                    local message = p4
+                    if type(message) == "table" and message.type == "job_status_response" and message.turtle_id == config.turtleID then
+                        os.cancelTimer(timeout)
+                        jobActive = message.job_active
+                        gotResponse = true
+                        log("Server response: job_active = " .. tostring(jobActive))
+                    end
+                end
             end
             
-            log("State restored - ready to continue mining")
-            return -- Skip initialization, go straight to mining
+            -- If no active job, clean up state and start fresh
+            if not jobActive then
+                log("No active job - clearing saved state")
+                if fs.exists(STATE_FILE) then
+                    fs.delete(STATE_FILE)
+                end
+                -- Reset config to defaults
+                config = {
+                    turtleID = os.getComputerID(),
+                    serverChannel = nil,
+                    broadcastChannel = 65535,
+                    zone = nil,
+                    gps_zone = nil,
+                    chestGPS = {
+                        fuel = nil,
+                        output = nil
+                    },
+                    isCoordinated = false,
+                    startGPS = nil,
+                    aborted = false,
+                    miningStarted = false
+                }
+                -- Fall through to fresh initialization
+            else
+                -- Job is active, resume from saved state
+                -- Re-initialize GPS navigation - gps_nav.init() will get current GPS
+                -- but we keep our original startGPS from the saved state
+                if config.startGPS then
+                    gps_nav.init()
+                    log("GPS initialized - preserved start position: " .. 
+                        config.startGPS.x .. "," .. config.startGPS.y .. "," .. config.startGPS.z)
+                end
+                
+                -- Send ready signal to server so it knows we're back online
+                modem.transmit(config.serverChannel, config.serverChannel, {
+                    type = "worker_ready",
+                    turtle_id = config.turtleID
+                })
+                
+                log("State restored - ready to continue mining")
+                return -- Skip initialization, go straight to mining
+            end
         end
     end
     
