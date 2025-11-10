@@ -147,7 +147,16 @@ local function deploy()
             
             if event == "timer" and p1 == timeout then
                 print("Server not responding, starting fresh deployment")
-                state = {deployerID = os.getComputerID()}
+                state = {
+                    deployerID = os.getComputerID(),
+                    startGPS = nil,
+                    zones = {},
+                    numWorkers = 0,
+                    chestPositions = {fuel = nil, output = nil},
+                    serverChannel = nil,
+                    deploymentComplete = false,
+                    workerPhaseComplete = false
+                }
                 fs.delete(STATE_FILE)
                 break
             elseif event == "modem_message" then
@@ -164,7 +173,16 @@ local function deploy()
                         -- Since deployer state is not granular enough to resume mid-deployment,
                         -- we start fresh
                         print("Previous deployment incomplete, starting fresh")
-                        state = {deployerID = os.getComputerID()}
+                        state = {
+                            deployerID = os.getComputerID(),
+                            startGPS = nil,
+                            zones = {},
+                            numWorkers = 0,
+                            chestPositions = {fuel = nil, output = nil},
+                            serverChannel = nil,
+                            deploymentComplete = false,
+                            workerPhaseComplete = false
+                        }
                         fs.delete(STATE_FILE)
                         break
                     end

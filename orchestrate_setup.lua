@@ -35,6 +35,7 @@ local function setupWorkerTurtle()
     print("Downloading bootstrap loader...")
     
     local url = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/disk/worker/bootstrap.lua"
+    fs.delete("startup.lua")
     local success = shell.run("wget", url, "startup.lua", "-f")
     
     if success then
@@ -89,6 +90,7 @@ local function setupDeploymentTurtle()
     
     for _, file in ipairs(files) do
         print("Downloading " .. file.name .. "...")
+        fs.delete(file.name)
         local success = shell.run("wget", baseUrl .. file.url, file.name, "-f")
         if not success then
             print("ERROR: Failed to download " .. file.name)
@@ -97,14 +99,40 @@ local function setupDeploymentTurtle()
     end
     
     print()
+    print("Downloading auto-update script...")
+    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/"
+    fs.delete("auto_update.lua")
+    shell.run("wget", baseUrl .. "auto_update.lua", "auto_update.lua", "-f")
+    
+    -- Customize auto_update.lua for deployer
+    local autoUpdateContent = ""
+    if fs.exists("auto_update.lua") then
+        local f = fs.open("auto_update.lua", "r")
+        autoUpdateContent = f.readAll()
+        f.close()
+        
+        -- Replace component type placeholder
+        autoUpdateContent = autoUpdateContent:gsub("COMPONENT_TYPE_PLACEHOLDER", "deployer")
+        
+        local f = fs.open("auto_update.lua", "w")
+        f.write(autoUpdateContent)
+        f.close()
+    end
+    
     print("Creating startup file for auto-resume...")
     
-    -- Create startup file that runs deploy.lua
+    -- Create startup file that checks for updates then runs deploy.lua
     local startupFile = fs.open("startup.lua", "w")
-    startupFile.writeLine("-- Auto-resume for Deployment Turtle")
+    startupFile.writeLine("-- Auto-resume for Deployment Turtle with auto-update")
     startupFile.writeLine("print('Deployment Turtle Starting...')")
-    startupFile.writeLine("sleep(0.5)")
     startupFile.writeLine("")
+    startupFile.writeLine("-- Check for updates")
+    startupFile.writeLine("if fs.exists('auto_update.lua') then")
+    startupFile.writeLine("    local checkVersion = dofile('auto_update.lua')")
+    startupFile.writeLine("    checkVersion()")
+    startupFile.writeLine("end")
+    startupFile.writeLine("")
+    startupFile.writeLine("sleep(0.5)")
     startupFile.writeLine("shell.run('deploy.lua')")
     startupFile.close()
     
@@ -143,6 +171,7 @@ local function setupOrchestrationServer()
     print("Downloading orchestration server...")
     
     local url = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/orchestrate_server.lua"
+    fs.delete("orchestrate_server.lua")
     local success = shell.run("wget", url, "orchestrate_server.lua", "-f")
     
     if not success then
@@ -152,14 +181,40 @@ local function setupOrchestrationServer()
     end
     
     print()
+    print("Downloading auto-update script...")
+    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/"
+    fs.delete("auto_update.lua")
+    shell.run("wget", baseUrl .. "auto_update.lua", "auto_update.lua", "-f")
+    
+    -- Customize auto_update.lua for server
+    local autoUpdateContent = ""
+    if fs.exists("auto_update.lua") then
+        local f = fs.open("auto_update.lua", "r")
+        autoUpdateContent = f.readAll()
+        f.close()
+        
+        -- Replace component type placeholder
+        autoUpdateContent = autoUpdateContent:gsub("COMPONENT_TYPE_PLACEHOLDER", "server")
+        
+        local f = fs.open("auto_update.lua", "w")
+        f.write(autoUpdateContent)
+        f.close()
+    end
+    
     print("Creating startup file for auto-restart...")
     
-    -- Create startup file
+    -- Create startup file with auto-update
     local startupFile = fs.open("startup.lua", "w")
-    startupFile.writeLine("-- Auto-restart for Orchestration Server")
+    startupFile.writeLine("-- Auto-restart for Orchestration Server with auto-update")
     startupFile.writeLine("print('Starting Orchestration Server...')")
-    startupFile.writeLine("sleep(1)")
     startupFile.writeLine("")
+    startupFile.writeLine("-- Check for updates")
+    startupFile.writeLine("if fs.exists('auto_update.lua') then")
+    startupFile.writeLine("    local checkVersion = dofile('auto_update.lua')")
+    startupFile.writeLine("    checkVersion()")
+    startupFile.writeLine("end")
+    startupFile.writeLine("")
+    startupFile.writeLine("sleep(1)")
     startupFile.writeLine("local success, err = pcall(function()")
     startupFile.writeLine("    shell.run('orchestrate_server.lua')")
     startupFile.writeLine("end)")
@@ -229,7 +284,9 @@ local function setupFirmwareDisk()
     
     for _, filename in ipairs(files) do
         print("Downloading " .. filename .. "...")
-        local success = shell.run("wget", baseUrl .. filename, mountPath .. "/worker/" .. filename, "-f")
+        local targetPath = mountPath .. "/worker/" .. filename
+        fs.delete(targetPath)
+        local success = shell.run("wget", baseUrl .. filename, targetPath, "-f")
         if not success then
             print("ERROR: Failed to download " .. filename)
             return false
