@@ -104,11 +104,13 @@ end
 local function setupOrchestrationServer()
     printTitle("Orchestration Server Setup")
     print("This will install the server program on this computer.")
+    print("The server will auto-restart and resume operations.")
     print()
     
     print("Requirements:")
     printStep(1, "Computer (not turtle)")
     printStep(2, "Modem attached (ender modem recommended)")
+    printStep(3, "Floppy disk with worker firmware in drive")
     print()
     
     if not confirm("Continue with server setup?") then
@@ -119,23 +121,49 @@ local function setupOrchestrationServer()
     print("Downloading orchestration server...")
     
     local url = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/orchestrate_server.lua"
-    local success = shell.run("wget", url, "server.lua", "-f")
+    local success = shell.run("wget", url, "orchestrate_server.lua", "-f")
     
-    if success then
-        print()
-        print("SUCCESS! Server is ready.")
-        print()
-        print("To start the server:")
-        print("  Run: server")
-        print()
-        print("Note the server's channel ID (computer ID)")
-        print("You'll need it when deploying turtles.")
-        return true
-    else
+    if not success then
         print()
         print("ERROR: Failed to download server program.")
         return false
     end
+    
+    print()
+    print("Creating startup file for auto-restart...")
+    
+    -- Create startup file
+    local startupFile = fs.open("startup.lua", "w")
+    startupFile.writeLine("-- Auto-restart for Orchestration Server")
+    startupFile.writeLine("print('Starting Orchestration Server...')")
+    startupFile.writeLine("sleep(1)")
+    startupFile.writeLine("")
+    startupFile.writeLine("local success, err = pcall(function()")
+    startupFile.writeLine("    shell.run('orchestrate_server.lua')")
+    startupFile.writeLine("end)")
+    startupFile.writeLine("")
+    startupFile.writeLine("if not success then")
+    startupFile.writeLine("    print('Server error: ' .. tostring(err))")
+    startupFile.writeLine("    print('Press any key to restart...')")
+    startupFile.writeLine("    os.pullEvent('key')")
+    startupFile.writeLine("    os.reboot()")
+    startupFile.writeLine("end")
+    startupFile.close()
+    
+    print()
+    print("SUCCESS! Server is ready.")
+    print()
+    print("The server will:")
+    print("  - Auto-start on computer boot")
+    print("  - Resume operations after restart")
+    print("  - Track worker states across reboots")
+    print()
+    print("Server channel ID: " .. os.getComputerID())
+    print("Note this ID for deployment turtle.")
+    print()
+    print("To disable auto-start, delete 'startup.lua'")
+    
+    return true
 end
 
 local function setupFirmwareDisk()

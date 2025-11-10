@@ -7,6 +7,8 @@ os.loadAPI("flex.lua")
 os.loadAPI("gps_nav.lua")
 
 -- Worker configuration
+local STATE_FILE = "quarry_state_" .. os.getComputerID() .. ".cfg"
+
 local config = {
     turtleID = os.getComputerID(),
     serverChannel = nil,
@@ -19,8 +21,37 @@ local config = {
     },
     isCoordinated = false,
     startGPS = nil,
-    aborted = false
+    aborted = false,
+    miningStarted = false
 }
+
+-- Save state to disk
+local function saveState()
+    local file = fs.open(STATE_FILE, "w")
+    file.write(textutils.serialize({
+        config = config,
+        digLocation = dig.location()
+    }))
+    file.close()
+end
+
+-- Load state from disk
+local function loadState()
+    if fs.exists(STATE_FILE) then
+        local file = fs.open(STATE_FILE, "r")
+        local data = file.readAll()
+        file.close()
+        local state = textutils.unserialize(data)
+        if state then
+            config = state.config
+            if state.digLocation then
+                dig.goto(state.digLocation)
+            end
+            return true
+        end
+    end
+    return false
+end
 
 -- Persistent logging function
 local logFile = "worker_" .. os.getComputerID() .. ".log"
@@ -88,111 +119,6 @@ local function validateInZone()
     end
     
     return inZone
-end
-
-local function gpsNavigateTo(targetGPS, approachDir)
-    if not targetGPS then
-        return false, "No target GPS provided"
-    end
-    
-    -- Get current position
-    local currentGPS = getGPS(5)
-    if not currentGPS then
-        return false, "Failed to get current GPS position"
-    end
-    
-    log("Navigating from " .. textutils.serialize(currentGPS) .. 
-          " to " .. textutils.serialize(targetGPS))
-    
-    -- Calculate approach position based on direction
-    local approachGPS = {x = targetGPS.x, y = targetGPS.y, z = targetGPS.z}
-    if approachDir then
-        if approachDir == "north" then
-            approachGPS.z = targetGPS.z + 1
-        elseif approachDir == "south" then
-            approachGPS.z = targetGPS.z - 1
-        elseif approachDir == "east" then
-            approachGPS.x = targetGPS.x + 1
-        elseif approachDir == "west" then
-            approachGPS.x = targetGPS.x - 1
-        elseif approachDir == "down" then
-            approachGPS.y = targetGPS.y - 1
-        elseif approachDir == "up" then
-            approachGPS.y = targetGPS.y + 1
-        end
-    end
-    
-    -- Convert GPS Y to dig.lua Y coordinate
-    -- dig.lua Y=0 corresponds to startGPS.y (where turtle was placed/started)
-    local targetDigY = approachGPS.y - config.startGPS.y
-    
-    -- Navigate to Y level first
-    local currentY = dig.gety()
-    if currentY < targetDigY then
-        for i = 1, targetDigY - currentY do
-            dig.up()
-        end
-    elseif currentY > targetDigY then
-        for i = 1, currentY - targetDigY do
-            dig.down()
-        end
-    end
-    
-    -- Use GPS to verify and navigate X/Z
-    local attempts = 0
-    while attempts < 10 do
-        currentGPS = getGPS(5)
-        if not currentGPS then
-            attempts = attempts + 1
-            sleep(1)
-            break
-        end
-        
-        local deltaX = approachGPS.x - currentGPS.x
-        local deltaZ = approachGPS.z - currentGPS.z
-        
-        -- Check if we've arrived
-        if math.abs(deltaX) < 0.5 and math.abs(deltaZ) < 0.5 then
-            break
-        end
-        
-        -- Move toward target
-        if math.abs(deltaX) > 0.5 then
-            if deltaX > 0 then
-                dig.gotor(90)
-                dig.fwd()
-            else
-                dig.gotor(270)
-                dig.fwd()
-            end
-        elseif math.abs(deltaZ) > 0.5 then
-            if deltaZ > 0 then
-                dig.gotor(0)
-                dig.fwd()
-            else
-                dig.gotor(180)
-                dig.fwd()
-            end
-        end
-        
-        attempts = attempts + 1
-    end
-    
-    -- Face the chest (or position for vertical access)
-    if approachDir == "north" then
-        dig.gotor(180) -- Face south toward chest
-    elseif approachDir == "south" then
-        dig.gotor(0) -- Face north toward chest
-    elseif approachDir == "east" then
-        dig.gotor(270) -- Face west toward chest
-    elseif approachDir == "west" then
-        dig.gotor(90) -- Face east toward chest
-    elseif approachDir == "down" or approachDir == "up" then
-        -- No specific facing needed for vertical chest access
-        dig.gotor(0) -- Face north by default
-    end
-    
-    return true
 end
 
 -- Send status update to server
@@ -279,7 +205,9 @@ local function releaseResource(resourceType)
 end
 
 -- Coordinated resource operations
-local function queuedResourceAccess(resourceType)
+-- Optional returnPos parameter allows specifying a GPS position to return to after resource access
+-- If nil, returns to the saved position (current position before accessing resource)
+local function queuedResourceAccess(resourceType, returnPos)
     if not config.isCoordinated then
         -- Fall back to normal operation
         if resourceType == "output" then
@@ -293,16 +221,18 @@ local function queuedResourceAccess(resourceType)
     -- Save current position AND direction
     local savedPos = gps_nav.getPosition()
     local savedRotation = dig.getr()
+    local savedDirection = dig.getCardinalDir()
     
-    -- Detect the actual GPS cardinal direction we're facing
-    local savedDirection = gps_nav.getCurrentDirection()
-    if not savedDirection then
-        log("Warning: Could not detect GPS direction, will skip direction restoration")
-    end
+    -- Use custom return position if provided, otherwise use saved position
+    local targetReturnPos = returnPos or savedPos
     
     log("Saving position: " .. textutils.serialize(savedPos) .. 
           " dig.lua rotation=" .. savedRotation .. 
-          (savedDirection and (" GPS direction=" .. savedDirection) or ""))
+          " direction=" .. tostring(savedDirection))
+    
+    if returnPos then
+        log("Will return to custom position: " .. textutils.serialize(returnPos))
+    end
     
     -- Validate we're in zone before leaving
     validateInZone()
@@ -366,17 +296,17 @@ local function queuedResourceAccess(resourceType)
               ", holding " .. turtle.getItemCount(1) .. " fuel items")
     end
     
-    log("Operation complete, returning to mining position...")
-    log("Target position: " .. textutils.serialize(savedPos))
+    log("Operation complete, returning to position...")
+    log("Target position: " .. textutils.serialize(targetReturnPos))
     log("Current position before return: " .. textutils.serialize(gps_nav.getPosition()))
     
-    -- Return to saved position using GPS navigation
-    local returnSuccess = gps_nav.goto(savedPos.x, savedPos.y, savedPos.z)
+    -- Return to target position using GPS navigation
+    local returnSuccess = gps_nav.goto(targetReturnPos.x, targetReturnPos.y, targetReturnPos.z)
     
     if not returnSuccess then
-        log("ERROR: Failed to return to saved position!")
+        log("ERROR: Failed to return to target position!")
         log("Current position: " .. textutils.serialize(gps_nav.getPosition()))
-        log("Target was: " .. textutils.serialize(savedPos))
+        log("Target was: " .. textutils.serialize(targetReturnPos))
         -- Still try to restore direction
     else
         log("Successfully arrived at saved GPS position")
@@ -387,19 +317,17 @@ local function queuedResourceAccess(resourceType)
     if savedDirection then
         log("Restoring direction to: " .. savedDirection .. " (dig.lua rotation=" .. savedRotation .. ")")
         
-        -- Use GPS to turn to face the saved cardinal direction
-        -- faceDirection already uses dig.left/right so it maintains dig.lua tracking
+        -- Use gps_nav to turn to face the saved cardinal direction
         if gps_nav.faceDirection(savedDirection) then
-            -- Now override dig.lua's rotation to the exact saved value
-            -- This is needed because gps_nav may have taken a different path
+            -- Override dig.lua's rotation to the exact saved value
             dig.setr(savedRotation)
-            log("Direction restored: dig.lua rotation=" .. dig.getr() .. " GPS direction=" .. savedDirection)
+            log("Direction restored: dig.lua rotation=" .. dig.getr() .. " direction=" .. savedDirection)
         else
-            log("Warning: Failed to restore GPS direction, setting dig.lua rotation anyway")
+            log("Warning: Failed to restore direction, setting dig.lua rotation anyway")
             dig.setr(savedRotation)
         end
     else
-        log("Warning: Could not detect GPS direction earlier, restoring dig.lua rotation only")
+        log("Warning: No saved direction, restoring dig.lua rotation only")
         dig.setr(savedRotation)
         log("dig.lua rotation set to: " .. dig.getr())
     end
@@ -417,6 +345,34 @@ end
 -- Initialize worker - receive firmware and zone assignment
 local function initializeWorker()
     log("\n=== Worker Initialization ===")
+    
+    -- Check if we're restarting from previous state
+    if loadState() then
+        log("Found previous state - resuming from saved position")
+        log("Position: X=" .. dig.getx() .. " Y=" .. dig.gety() .. " Z=" .. dig.getz())
+        log("Rotation: " .. dig.getr())
+        if dig.getCardinalDir() then
+            log("Direction: " .. dig.getCardinalDir())
+        end
+        
+        if config.isCoordinated and config.zone then
+            modem.open(config.broadcastChannel)
+            modem.open(config.serverChannel)
+            
+            -- Re-initialize GPS navigation - gps_nav.init() will get current GPS
+            -- but we keep our original startGPS from the saved state
+            if config.startGPS then
+                gps_nav.init()
+                log("GPS initialized - preserved start position: " .. 
+                    config.startGPS.x .. "," .. config.startGPS.y .. "," .. config.startGPS.z)
+            end
+            
+            log("State restored - ready to continue mining")
+            return -- Skip initialization, go straight to mining
+        end
+    end
+    
+    log("Starting fresh initialization...")
     log("Waiting for zone assignment...")
     
     modem.open(config.broadcastChannel)
@@ -475,8 +431,19 @@ local function initializeWorker()
                     config.isCoordinated = true
                     config.startGPS = currentGPS
                     
+                    -- Set initial cardinal direction from server
+                    if message.initial_direction then
+                        dig.setCardinalDir(message.initial_direction)
+                        log("Initial direction set to: " .. message.initial_direction)
+                    else
+                        log("Warning: No initial direction provided by server")
+                    end
+                    
                     -- Initialize GPS navigation
                     gps_nav.init()
+                    
+                    -- Save initial state
+                    saveState()
                     
                     log("Zone assignment received!")
                     log("Zone: X=" .. config.zone.xmin .. "-" .. config.zone.xmax)
@@ -515,6 +482,8 @@ local function initializeWorker()
         local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
         if type(message) == "table" and message.type == "start_mining" then
             log("Start signal received!")
+            config.miningStarted = true
+            saveState()
             sendStatusUpdate("mining")
             break
         end
@@ -624,6 +593,30 @@ if coordinatedMode then
     dig.doBlacklist()
     dig.doAttack()
     
+    -- Always wait for start signal from server (both fresh start and restart)
+    if not config.miningStarted then
+        log("Waiting for start signal from server...")
+    else
+        log("Resuming from saved state - waiting for start signal...")
+        -- Reset flag so we wait for signal again
+        config.miningStarted = false
+        saveState()
+    end
+    
+    modem.open(config.serverChannel)
+    modem.open(config.broadcastChannel)
+    
+    while not config.miningStarted do
+        local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
+        if type(message) == "table" and message.type == "start_mining" then
+            log("Start signal received!")
+            config.miningStarted = true
+            saveState()
+            sendStatusUpdate("mining")
+            break
+        end
+    end
+    
     -- Run quarry with zone constraints
     log("\n=== Starting Zone Mining ===")
     local width = config.zone.xmax - config.zone.xmin + 1
@@ -639,6 +632,9 @@ if coordinatedMode then
     
     -- Wrap dig functions to include periodic status updates, fuel checks, and abort checks
     local originalFwd = dig.fwd
+    local lastStateSave = os.clock()
+    local stateSaveInterval = 30 -- Save state every 30 seconds
+    
     dig.fwd = function()
         -- Check for abort command (non-blocking)
         if config.isCoordinated and config.aborted then
@@ -654,6 +650,12 @@ if coordinatedMode then
         if os.clock() - lastStatusUpdate > statusUpdateInterval then
             sendStatusUpdate("mining")
             lastStatusUpdate = os.clock()
+        end
+        
+        -- Save state periodically
+        if os.clock() - lastStateSave > stateSaveInterval then
+            saveState()
+            lastStateSave = os.clock()
         end
         
         return result
@@ -720,17 +722,11 @@ if coordinatedMode then
     
     -- Handle abort
     if not miningSuccess and config.aborted then
-        log("Abort received - dumping inventory and returning...")
+        log("Abort received - dumping inventory and returning to start...")
         sendStatusUpdate("aborting")
         
-        -- Use queuedResourceAccess to handle the entire chest access sequence
-        -- This handles requesting, navigating, dumping, and returning automatically
-        queuedResourceAccess("output")
-        
-        -- Now navigate to starting position using GPS
-        log("Returning to starting position via GPS...")
-        gps_nav.goto(config.startGPS.x, config.startGPS.y, config.startGPS.z)
-        log("Returned to starting position: " .. textutils.serialize(config.startGPS))
+        -- Use queuedResourceAccess to dump inventory, returning to starting position instead of current position
+        queuedResourceAccess("output", config.startGPS)
         
         -- Send abort acknowledgment
         modem.transmit(config.serverChannel, config.serverChannel, {
@@ -755,30 +751,23 @@ end
 -- Completion sequence
 if config.isCoordinated then
     log("\n=== Zone Mining Complete ===")
-    log("Dumping remaining inventory...")
     
-    -- Request output chest access to dump remaining items
-    -- queuedResourceAccess handles navigation and dumping automatically
-    queuedResourceAccess("output")
-    
-    -- Return to starting position
-    log("Returning to starting position...")
-    dig.goto(0, 0, 0, 0)
-    log("Arrived at starting position")
+    -- Dump inventory and return to starting position in one operation
+    queuedResourceAccess("output", config.startGPS)
     
     -- Send completion message
     sendStatusUpdate("complete")
     modem.transmit(config.serverChannel, config.serverChannel, {
         type = "zone_complete",
         turtle_id = config.turtleID,
-        final_pos = {
-            x = dig.getx(),
-            y = dig.gety(),
-            z = dig.getz()
-        }
+        final_pos = getGPS(3)
     })
+    
+    -- Clean up state file since we're done
+    if fs.exists(STATE_FILE) then
+        fs.delete(STATE_FILE)
+    end
     
     log("Completion reported to server")
     log("Worker standing by...")
-    -- Exit and return control (to deployer script if deployer, or just finish if regular worker)
 end

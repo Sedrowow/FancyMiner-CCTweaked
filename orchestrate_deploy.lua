@@ -8,6 +8,8 @@ os.loadAPI("flex.lua")
 local SERVER_CHANNEL = nil
 local BROADCAST_CHANNEL = 65535
 
+local STATE_FILE = "deploy_state.cfg"
+
 local state = {
     deployerID = os.getComputerID(),
     startGPS = nil,
@@ -17,8 +19,29 @@ local state = {
         fuel = nil,
         output = nil
     },
-    serverChannel = nil
+    serverChannel = nil,
+    deploymentComplete = false,
+    workerPhaseComplete = false
 }
+
+-- Save state to disk
+local function saveState()
+    local file = fs.open(STATE_FILE, "w")
+    file.write(textutils.serialize(state))
+    file.close()
+end
+
+-- Load state from disk
+local function loadState()
+    if fs.exists(STATE_FILE) then
+        local file = fs.open(STATE_FILE, "r")
+        local data = file.readAll()
+        file.close()
+        state = textutils.unserialize(data)
+        return true
+    end
+    return false
+end
 
 -- Initialize modem
 local modem = peripheral.find("ender_modem")
@@ -41,145 +64,121 @@ local function getGPS(retries)
         if x then
             return {x = x, y = y, z = z}
         end
-        print("GPS attempt " .. i .. "/" .. retries .. " failed, retrying...")
         sleep(1)
     end
-    error("Failed to get GPS coordinates after " .. retries .. " attempts")
+    error("Failed to get GPS after " .. retries .. " attempts")
 end
 
--- Deploy a single worker turtle
 -- Ensure we have at least 8 fuel in slot 1
 local function ensureFuel()
     turtle.select(1)
-    local count = turtle.getItemCount(1)
-    
-    if count >= 8 then
+    if turtle.getItemCount(1) >= 8 then
         return true
     end
     
-    -- Need more fuel, go get it from fuel chest
-    print("Getting more fuel from chest...")
-    local currentX, currentY, currentZ = dig.getx(), dig.gety(), dig.getz()
-    local currentR = dig.getr()
+    -- Save position and get fuel from chest
+    local savedLoc = dig.location()
+    dig.goto(1, 0, 0, 0)
     
-    -- Navigate to fuel chest position at ground level (X+1, Y+0)
-    dig.goto(1, 0, 0, 0) -- Stay at Y=0
-    dig.gotor(0) -- Face north
-    
-    -- Pull fuel from chest above
     turtle.select(1)
-    local stackLimit = turtle.getItemSpace(1)
-    
-    while turtle.getItemCount(1) < stackLimit do
-        if not turtle.suckUp(1) then
-            -- No more fuel available in chest
-            break
-        end
+    while turtle.getItemCount(1) < turtle.getItemSpace(1) do
+        if not turtle.suckUp(1) then break end
     end
     
-    if turtle.getItemCount(1) < 8 then
-        print("Warning: Could not get enough fuel from chest")
-    end
-    
-    -- Return to previous position
-    dig.goto(currentX, currentY, currentZ, currentR)
-    
+    dig.goto(savedLoc)
     return turtle.getItemCount(1) >= 8
 end
 
 local function deployWorker(slot, zone, zoneIndex)
-    -- Check if slot contains a turtle
     local detail = turtle.getItemDetail(slot)
     if not detail or not detail.name:find("turtle") then
         return false, "No turtle in slot " .. slot
     end
     
-    -- Ensure we have fuel to give to worker
     if not ensureFuel() then
-        return false, "Insufficient fuel to deploy worker " .. zoneIndex
+        return false, "Insufficient fuel"
     end
     
-    -- Calculate deployment position
-    local deployX = state.startGPS.x + zone.xmin
-    local deployY = state.startGPS.y
-    local deployZ = state.startGPS.z
+    print("Deploying worker " .. zoneIndex)
+    dig.goto(zone.xmin, 0, 0, 180)
     
-    -- Navigate to deployment position
-    print("Moving to deployment position for zone " .. zoneIndex)
-    dig.goto(zone.xmin, 0, 0, 0)
-    
-    -- Face south (rotation 180) so workers mine in the correct direction
-    dig.gotor(180)
-    
-    -- Mine out the block below to ensure space for turtle placement at Y=-1
-    if turtle.detectDown() then
-        print("Mining out block below for turtle placement...")
-        turtle.digDown()
-    end
-    
-    -- Place turtle (will face south like deployer)
+    -- Clear space and place turtle
+    if turtle.detectDown() then turtle.digDown() end
     turtle.select(slot)
     if not turtle.placeDown() then
-        return false, "Failed to place turtle at zone " .. zoneIndex
+        return false, "Failed to place turtle"
     end
     
-    -- Get placed turtle's ID by inspecting
-    local success, data = turtle.inspectDown()
-    if not success or not data.name:find("turtle") then
-        return false, "Failed to verify turtle placement"
-    end
-    
-    -- Drop 8 fuel into the placed worker
+    -- Fuel and power on
     turtle.select(1)
-    if not turtle.dropDown(8) then
-        print("Warning: Failed to fuel worker " .. zoneIndex)
-    else
-        print("Fueled worker " .. zoneIndex .. " with 8 fuel")
-    end
+    turtle.dropDown(8)
     
-    -- Turn on the placed turtle
     local turtlePeripheral = peripheral.wrap("bottom")
     if turtlePeripheral and turtlePeripheral.turnOn then
         turtlePeripheral.turnOn()
-        print("Worker " .. zoneIndex .. " powered on")
-    else
-        print("Warning: Could not turn on worker " .. zoneIndex)
     end
     
-    print("Turtle placed at zone " .. zoneIndex)
-    return true, slot
-end
-
--- Calculate GPS zone boundaries
-local function calculateGPSZone(zone, startGPS)
-    return {
-        gps_xmin = startGPS.x + zone.xmin,
-        gps_xmax = startGPS.x + zone.xmax,
-        gps_zmin = startGPS.z + zone.zmin,
-        gps_zmax = startGPS.z + zone.zmax,
-        gps_ymin = startGPS.y + zone.ymin,
-        gps_ymax = startGPS.y + zone.ymax
-    }
+    return true
 end
 
 -- Main deployment sequence
 local function deploy()
-    print("\n=== Starting Deployment Sequence ===\n")
+    print("=== Deployment Starting ===")
     
-    -- Get starting GPS coordinates
-    print("Acquiring GPS coordinates...")
+    -- Check if we're restarting from a previous deployment
+    if loadState() then
+        print("Found previous deployment state")
+        print("Checking with server...")
+        
+        SERVER_CHANNEL = state.serverChannel
+        modem.open(SERVER_CHANNEL)
+        modem.open(BROADCAST_CHANNEL)
+        
+        -- Ping server to check status
+        modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
+            type = "deployer_restart",
+            deployer_id = state.deployerID
+        })
+        
+        -- Wait for server response
+        local timeout = os.startTimer(10)
+        while true do
+            local event, p1, p2, p3, p4 = os.pullEvent()
+            
+            if event == "timer" and p1 == timeout then
+                print("Server not responding, starting fresh deployment")
+                state = {deployerID = os.getComputerID()}
+                fs.delete(STATE_FILE)
+                break
+            elseif event == "modem_message" then
+                local message = p4
+                if type(message) == "table" and message.type == "restart_response" and message.deployer_id == state.deployerID then
+                    os.cancelTimer(timeout)
+                    
+                    if message.deployment_complete then
+                        print("Deployment already complete, transitioning to worker mode")
+                        state.deploymentComplete = true
+                        return -- Skip deployment, go straight to worker mode
+                    else
+                        print("Server says deployment incomplete, resuming...")
+                        -- Continue with deployment
+                    end
+                    break
+                end
+            end
+        end
+    end
+    
     state.startGPS = getGPS()
-    print("Starting position: " .. textutils.serialize(state.startGPS))
+    print("GPS: " .. textutils.serialize(state.startGPS))
     
-    -- Request deployment parameters from server
-    print("\nRequesting deployment parameters from server...")
-    print("Enter server channel ID:")
+    print("\nEnter server channel ID:")
     SERVER_CHANNEL = tonumber(read())
-    
+    state.serverChannel = SERVER_CHANNEL
     modem.open(SERVER_CHANNEL)
     modem.open(BROADCAST_CHANNEL)
     
-    -- Count available turtles (slots 4-16, slots 1-3 are for fuel/chests)
+    -- Count turtles in slots 4-16
     local turtleSlots = {}
     for slot = 4, 16 do
         local detail = turtle.getItemDetail(slot)
@@ -189,12 +188,12 @@ local function deploy()
     end
     
     if #turtleSlots == 0 then
-        error("No turtles found in inventory (slots 3-16)")
+        error("No turtles in slots 4-16")
     end
     
-    print("Found " .. #turtleSlots .. " turtles available for deployment")
+    print("Found " .. #turtleSlots .. " turtles")
     
-    -- Request quarry parameters
+    -- Get quarry parameters
     print("\nEnter quarry width:")
     local width = tonumber(read())
     print("Enter quarry length:")
@@ -204,10 +203,7 @@ local function deploy()
     print("Enter skip depth (0 for none):")
     local skip = tonumber(read())
     
-    -- Send deployment request to server (include deployer as a worker)
-    print("\nSending deploy_request to channel " .. SERVER_CHANNEL)
-    print("Deployer ID: " .. state.deployerID)
-    print("Num workers: " .. (#turtleSlots + 1))
+    print("\nContacting server...")
     
     modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
         type = "deploy_request",
@@ -234,144 +230,90 @@ local function deploy()
             state.numWorkers = message.num_workers
             state.serverChannel = message.server_channel
             SERVER_CHANNEL = message.server_channel
+            saveState()
             gotCommand = true
             print("Received zone assignments from server")
         end
     end
     
-    -- Place both chests at Y+1 level, turtle stays at Y=0
-    print("\nPlacing output chest...")
-    turtle.select(3) -- Output chest in slot 3
-    if not turtle.placeUp() then
-        error("Failed to place output chest - ensure chest is in slot 3")
-    end
-    -- Output chest now at (0, 1, 0), turtle still at (0, 0, 0)
+    -- Place chests at Y+1
+    print("\nPlacing chests...")
+    turtle.select(3)
+    if not turtle.placeUp() then error("No output chest in slot 3") end
     
-    local outputGPS = {
+    state.chestPositions.output = {
         x = state.startGPS.x,
         y = state.startGPS.y + 1,
         z = state.startGPS.z
     }
-    state.chestPositions.output = outputGPS
     
-    -- Move east and place fuel chest at same level
-    print("Placing fuel chest...")
-    dig.gotor(90) -- Face east
-    dig.fwd() -- Move to (1, 0, 0)
-    turtle.select(2) -- Fuel chest in slot 2
-    if not turtle.placeUp() then
-        error("Failed to place fuel chest - ensure chest is in slot 2")
-    end
-    -- Fuel chest now at (1, 1, 0), turtle at (1, 0, 0)
+    dig.goto(1, 0, 0, 90)
+    turtle.select(2)
+    if not turtle.placeUp() then error("No fuel chest in slot 2") end
     
-    local fuelGPS = {
+    state.chestPositions.fuel = {
         x = state.startGPS.x + 1,
         y = state.startGPS.y + 1,
         z = state.startGPS.z
     }
-    state.chestPositions.fuel = fuelGPS
     
-    -- Return to starting position
-    dig.gotor(180) -- Face west
-    dig.fwd() -- Move back to (0, 0, 0)
-    dig.gotor(0) -- Face north
-    
-    -- Report chest positions and starting GPS to server
-    dig.gotor(0) -- Face forward
+    dig.goto(0, 0, 0, 0)
     modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
         type = "chest_positions",
-        fuel_gps = fuelGPS,
-        output_gps = outputGPS,
+        fuel_gps = state.chestPositions.fuel,
+        output_gps = state.chestPositions.output,
         start_gps = state.startGPS
     })
     
-    print("Chests placed and registered with server")
-    print("Server will load firmware from its disk drive")
+    saveState()
+    print("Chests placed")
     
-    -- Wait for fuel to be placed in fuel chest
-    print("\n=== Waiting for fuel ===")
-    print("Please place fuel in the fuel chest")
-    
-    dig.goto(1, 0, 0, 0) -- Move to position under fuel chest
-    dig.gotor(0) -- Face north
-    
-    -- Wait until fuel is detected in chest above
+    -- Wait for fuel
+    print("\nWaiting for fuel in chest...")
+    dig.goto(1, 0, 0, 0)
     turtle.select(1)
-    while true do
-        if turtle.suckUp(1) then
-            print("Fuel detected! Proceeding with deployment...")
-            break
-        end
-        sleep(1)
-    end
+    while not turtle.suckUp(1) do sleep(1) end
+    print("Fuel detected")
     
-    -- Return to start position
     dig.goto(0, 0, 0, 0)
     
-    print("\nReady to deploy workers...")
-    
-    -- Deploy each worker turtle
-    print("\n=== Deploying Workers ===\n")
-    
+    -- Deploy workers
+    print("\n=== Deploying Workers ===")
     for i, slot in ipairs(turtleSlots) do
-        local zone = state.zones[i]
-        print("\nDeploying worker " .. i .. "/" .. #turtleSlots)
-        print("Zone: X=" .. zone.xmin .. "-" .. zone.xmax .. ", Z=" .. zone.zmin .. "-" .. zone.zmax)
-        
-        local success, err = deployWorker(slot, zone, i)
-        if not success then
-            print("Warning: " .. err)
-        end
+        local success, err = deployWorker(slot, state.zones[i], i)
+        if not success then print("Warning: " .. err) end
     end
     
-    -- Ensure deployer has fuel before moving to worker position
-    print("\n=== Preparing Deployer for Worker Mode ===")
-    turtle.select(1)
-    local fuelCount = turtle.getItemCount(1)
-    
-    if fuelCount < 8 then
-        print("Getting fuel for self...")
-        dig.goto(1, 0, 0, 0) -- Move to position under fuel chest
-        dig.gotor(0) -- Face north
+    -- Prepare deployer
+    print("\n=== Preparing Deployer ===")
+    if not ensureFuel() then
+        dig.goto(1, 0, 0, 0)
         turtle.select(1)
-        
-        local stackLimit = turtle.getItemSpace(1)
-        while turtle.getItemCount(1) < stackLimit do
+        while turtle.getItemCount(1) < 64 do
             if not turtle.suckUp(1) then
-                if turtle.getItemCount(1) >= 8 then
-                    break -- Have enough even if not full
-                end
-                print("Waiting for more fuel...")
+                if turtle.getItemCount(1) >= 8 then break end
                 sleep(1)
             end
         end
-        
         dig.goto(0, 0, 0, 0)
-        print("Fueled successfully with " .. turtle.getItemCount(1) .. " fuel")
     end
     
-    -- Deployer gets the last zone - navigate there before signaling completion
+    -- Move to deployer's zone
     local deployerZone = state.zones[#state.zones]
-    print("\n=== Moving to Deployer's Worker Position ===")
-    print("Deployer will mine zone " .. #state.zones)
-    print("Zone: X=" .. deployerZone.xmin .. "-" .. deployerZone.xmax .. ", Z=" .. deployerZone.zmin .. "-" .. deployerZone.zmax)
-    print("Moving to zone starting position...")
+    print("Moving to zone " .. #state.zones)
     dig.goto(deployerZone.xmin, -1, 0, 180)
-    print("Arrived at zone " .. #state.zones .. " starting position")
     
-    -- Notify server that deployment is complete
-    print("\nNotifying server of deployment completion...")
+    print("Notifying server...")
     modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
         type = "deployment_complete",
         deployer_id = state.deployerID
     })
     
-    print("\n=== Deployment Complete ===")
-    print("Workers deployed: " .. #turtleSlots)
+    state.deploymentComplete = true
+    saveState()
     
-    print("\n=== Transitioning to Worker Mode ===\n")
-    print("Starting worker bootstrap process...")
-    print("Deployer will now operate as a worker turtle")
+    print("\n=== Deployment Complete ===")
+    print("Transitioning to worker mode...")
     sleep(1)
 end
 
@@ -383,64 +325,50 @@ if not success then
     error(err)
 end
 
-print("\nDeployment successful! Becoming worker...")
-
--- Load and run bootstrap to join as worker
-if fs.exists("bootstrap.lua") then
-    shell.run("bootstrap.lua")
+-- Skip to worker mode if deployment was already complete
+if state.deploymentComplete then
+    print("Resuming from saved state...")
     
-    -- Bootstrap/quarry completed - deployer is now waiting for cleanup command
-    print("\n=== Worker Phase Complete ===")
-    print("Deployer finished mining zone")
-    print("Waiting for cleanup command from server...")
-    
-    -- Wait for cleanup command
+    -- Restore modem channels
+    SERVER_CHANNEL = state.serverChannel
     modem.open(SERVER_CHANNEL)
+    modem.open(BROADCAST_CHANNEL)
+end
+
+-- Become worker
+if not fs.exists("bootstrap.lua") then
+    error("bootstrap.lua not found")
+end
+
+shell.run("bootstrap.lua")
+
+state.workerPhaseComplete = true
+saveState()
+
+-- Wait for cleanup command
+print("\n=== Waiting for Cleanup Command ===\")
+modem.open(SERVER_CHANNEL)
+
+while true do
+    local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
     
-    while true do
-        local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
+    if type(message) == "table" and message.type == "cleanup_command" and message.turtle_id == state.deployerID then
+        print("\n=== Collecting Workers ===\")
         
-        if type(message) == "table" then
-            if message.type == "cleanup_command" and message.turtle_id == state.deployerID then
-                print("\n=== Cleanup Command Received ===")
-                print("Starting worker collection...")
-                
-                -- Navigate to each worker's starting position and collect them
-                -- Workers are at their zone starting positions (zone.xmin, 0, 0)
-                for i = 1, #state.zones - 1 do  -- Exclude last zone (deployer's zone)
-                    local zone = state.zones[i]
-                    local workerX = zone.xmin
-                    
-                    print("\nCollecting worker " .. i .. "...")
-                    print("  Navigating to position X=" .. workerX)
-                    
-                    -- Navigate to worker position
-                    dig.goto(workerX, 0, 0, 0)
-                    
-                    -- Worker should be below us at ground level
-                    local success, data = turtle.inspectDown()
-                    if success and data.name and data.name:find("turtle") then
-                        print("  Found turtle, breaking...")
-                        turtle.digDown()
-                        print("  Worker " .. i .. " collected")
-                    else
-                        print("  Warning: No turtle found at position")
-                    end
-                end
-                
-                -- Return to initial starting position
-                print("\nReturning to starting position...")
-                dig.goto(0, 0, 0, 0)
-                
-                print("\n=== Cleanup Complete ===")
-                print("All workers collected")
-                print("Deployer at starting position")
-                print("Chests remain in place for future use")
-                break
+        for i = 1, #state.zones - 1 do
+            print("Collecting worker " .. i)
+            dig.goto(state.zones[i].xmin, 0, 0, 0)
+            
+            local success, data = turtle.inspectDown()
+            if success and data.name and data.name:find("turtle") then
+                turtle.digDown()
+            else
+                print("Warning: No turtle at position")
             end
         end
+        
+        dig.goto(0, 0, 0, 0)
+        print("\n=== Cleanup Complete ===\")
+        break
     end
-else
-    print("Error: bootstrap.lua not found!")
-    print("Deployer cannot transition to worker mode.")
 end

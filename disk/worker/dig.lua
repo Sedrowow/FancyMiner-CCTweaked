@@ -376,6 +376,10 @@ zmax = 0
 rdist = 0
 rlast = -1
 
+-- Cardinal direction tracking (north, east, south, west)
+-- Initialized as nil until detected
+cardinalDir = nil
+
 lastmove = "r-"
 dugtotal = 0
 blocks_processed_total = 0 -- Added: Variable to track total blocks processed
@@ -384,11 +388,13 @@ function getx() return xdist end
 function gety() return ydist end
 function getz() return zdist end
 function getr() return rdist end
+function getCardinalDir() return cardinalDir end
 
 function setx(x) xdist = x end
 function sety(y) ydist = y end
 function setz(z) zdist = z end
 function setr(r) rdist = r end
+function setCardinalDir(dir) cardinalDir = dir end
 
 function getxmin() return xmin end
 function getxmax() return xmax end
@@ -438,7 +444,8 @@ function location()
     xmin, xmax, ymin, ymax, zmin, zmax,
     xlast, ylast, zlast, rlast,
     lastmove, dugtotal,
-    blocks_processed_total -- Added: Include blocks_processed_total
+    blocks_processed_total, -- Added: Include blocks_processed_total
+    cardinalDir -- Added: Include cardinal direction
      }
 end
 
@@ -496,6 +503,9 @@ function loadCoords(save)
   dugtotal = tonumber(file.readLine() or dugtotal)
   -- Added: Load blocks_processed_total from the save file
   blocks_processed_total = tonumber(file.readLine() or blocks_processed_total)
+  -- Added: Load cardinal direction from the save file
+  cardinalDir = file.readLine()
+  if cardinalDir == "nil" then cardinalDir = nil end
 
   -- Ensure all lines are read if the file format changed
   -- while file.readLine() ~= nil do end -- Read and discard any extra lines
@@ -666,6 +676,29 @@ function getStuckDir()
 end
 
 
+-- Update cardinal direction when turning
+local function updateCardinalDir(turnDirection)
+  if cardinalDir == nil then return end
+  
+  local directions = {"north", "east", "south", "west"}
+  local currentIdx = nil
+  for i, dir in ipairs(directions) do
+    if dir == cardinalDir then
+      currentIdx = i
+      break
+    end
+  end
+  
+  if currentIdx then
+    if turnDirection == "right" then
+      currentIdx = (currentIdx % 4) + 1
+    elseif turnDirection == "left" then
+      currentIdx = ((currentIdx - 2) % 4) + 1
+    end
+    cardinalDir = directions[currentIdx]
+  end
+end
+
 function left(n)
   n = (n or 1)
   if n < 0 then
@@ -675,6 +708,7 @@ function left(n)
   for x=1,n do
   turtle.turnLeft()
   update("left")
+  updateCardinalDir("left")
   end --if
   -- Rotations don't represent processed blocks in the same way as linear movement
   return true
@@ -690,6 +724,7 @@ function right(n)
   for x=1,n do
   turtle.turnRight()
   update("right")
+  updateCardinalDir("right")
   end --if
   -- Rotations don't represent processed blocks in the same way as linear movement
   return true

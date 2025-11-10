@@ -20,6 +20,7 @@ local state = {
         fuel = nil,
         output = nil
     },
+    startGPS = nil,
     miningStarted = false,
     completedCount = 0,
     aborted = false,
@@ -28,7 +29,9 @@ local state = {
     firmwareRequests = {}, -- Track which workers requested firmware
     zones = nil, -- Zone definitions (relative coordinates)
     gpsZones = nil, -- GPS zones with assignment tracking
-    isDeployerWorker = false -- Whether deployer participates as worker
+    isDeployerWorker = false, -- Whether deployer participates as worker
+    deploymentComplete = false, -- Whether initial deployment finished
+    firmwareLoaded = false -- Whether firmware is loaded from disk
 }
 
 local STATE_FILE = "orchestrate_state.cfg"
@@ -417,6 +420,7 @@ local function handleMessage(message)
         -- Deployer reporting chest locations and starting GPS
         state.chestPositions.fuel = message.fuel_gps
         state.chestPositions.output = message.output_gps
+        state.startGPS = message.start_gps
         local startGPS = message.start_gps
         
         print("Chest positions registered")
@@ -443,8 +447,11 @@ local function handleMessage(message)
         updateDisplay()
         
         -- Load firmware into cache (ready for worker requests)
-        local diskPath = checkDisk()
-        loadFirmware(diskPath)
+        if not state.firmwareLoaded then
+            local diskPath = checkDisk()
+            loadFirmware(diskPath)
+            state.firmwareLoaded = true
+        end
         
     elseif message.type == "worker_online" then
         -- Worker broadcasting that it's online and ready
@@ -485,6 +492,11 @@ local function handleMessage(message)
             return
         end
         
+        -- Initialize worker record if doesn't exist
+        if not state.workers[turtleID] then
+            state.workers[turtleID] = {}
+        end
+        
         print("Turtle " .. turtleID .. " ready at GPS (" .. workerGPS.x .. ", " .. workerGPS.y .. ", " .. workerGPS.z .. "), assigning zone...")
         
         -- Find zone that contains this worker's GPS position
@@ -510,6 +522,15 @@ local function handleMessage(message)
                     gpsZone.turtle_id = turtleID
                     matchedZone = i
                     
+                    -- Calculate initial cardinal direction based on worker deployment
+                    -- Workers are placed facing south (toward +Z) by the deployer
+                    local initialDirection = "south"
+                    
+                    -- Update worker record with zone info
+                    state.workers[turtleID].zone = state.zones[i]
+                    state.workers[turtleID].zone_index = i
+                    state.workers[turtleID].status = "assigned"
+                    
                     -- Send zone assignment
                     modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
                         type = "zone_assignment",
@@ -521,6 +542,7 @@ local function handleMessage(message)
                             fuel = state.chestPositions.fuel,
                             output = state.chestPositions.output
                         },
+                        initial_direction = initialDirection,
                         server_channel = SERVER_CHANNEL
                     })
                     
@@ -545,20 +567,31 @@ local function handleMessage(message)
         
     elseif message.type == "worker_ready" then
         -- Worker finished initialization
-        state.readyCount = state.readyCount + 1
-        if state.workers[message.turtle_id] then
-            state.workers[message.turtle_id].status = "ready"
+        if not state.workers[message.turtle_id] then
+            state.workers[message.turtle_id] = {}
         end
+        
+        -- Only increment if not already counted as ready
+        if state.workers[message.turtle_id].status ~= "ready" then
+            state.readyCount = state.readyCount + 1
+        end
+        state.workers[message.turtle_id].status = "ready"
         
         print("Worker " .. message.turtle_id .. " ready (" .. state.readyCount .. "/" .. state.totalWorkers .. ")")
         
-        -- Start mining when all workers ready
-        if state.readyCount == state.totalWorkers and not state.miningStarted then
+        -- Start mining when all workers ready (including on restart)
+        if state.readyCount >= state.totalWorkers and not state.miningStarted then
             state.miningStarted = true
             modem.transmit(BROADCAST_CHANNEL, SERVER_CHANNEL, {
                 type = "start_mining"
             })
             print("All workers ready - mining started!")
+        elseif state.miningStarted and state.workers[message.turtle_id].status == "ready" then
+            -- Worker rejoined after restart, tell it to start mining
+            print("Sending start signal to restarted worker " .. message.turtle_id)
+            modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
+                type = "start_mining"
+            })
         end
         saveState()
         updateDisplay()
@@ -668,8 +701,31 @@ local function handleMessage(message)
         state.workers[message.turtle_id].status = message.status
         updateDisplay()
         
+    elseif message.type == "deployer_restart" then
+        -- Deployer restarted and is checking status
+        print("Deployer " .. message.deployer_id .. " restarted, sending status...")
+        
+        local deploymentComplete = false
+        if state.deployerID == message.deployer_id then
+            -- Check if deployment was already done
+            deploymentComplete = (state.chestPositions.fuel ~= nil and state.chestPositions.output ~= nil)
+        end
+        
+        modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
+            type = "restart_response",
+            deployer_id = message.deployer_id,
+            deployment_complete = deploymentComplete,
+            zones = state.zones,
+            chest_gps = state.chestPositions,
+            start_gps = state.startGPS,
+            server_channel = SERVER_CHANNEL
+        })
+        
+        print("Sent restart response: deployment_complete=" .. tostring(deploymentComplete))
+        
     elseif message.type == "deployment_complete" then
         -- Deployer finished placing all workers
+        state.deploymentComplete = true
         print("Deployment complete - all workers placed")
         print("Waiting for workers to come online and download firmware...")
         saveState()
@@ -697,14 +753,46 @@ end
 -- Main server loop
 local function main()
     print("\n=== Orchestration Server Ready ===")
-    print("Waiting for deployment requests...")
-    print("Press 'Q' to abort operation")
-    print("Press Ctrl+T to stop\n")
     
     -- Try to load previous state
+    local isRestart = false
     if loadState() then
+        isRestart = true
         print("Previous state loaded from disk")
+        print("Deployment complete: " .. tostring(state.deploymentComplete))
+        print("Mining started: " .. tostring(state.miningStarted))
+        print("Total workers: " .. state.totalWorkers)
+        print("Ready count: " .. state.readyCount)
+        print("Completed: " .. state.completedCount)
+        
+        -- Reload firmware if deployment was complete
+        if state.deploymentComplete and not state.firmwareLoaded then
+            print("\nReloading firmware from disk...")
+            local success, err = pcall(function()
+                local diskPath = checkDisk()
+                loadFirmware(diskPath)
+                state.firmwareLoaded = true
+                print("Firmware reloaded successfully")
+            end)
+            if not success then
+                print("Warning: Could not reload firmware - " .. tostring(err))
+                print("Workers may need to be manually restarted")
+            end
+        end
+        
+        -- If mining was started, remind workers to continue
+        if state.miningStarted and state.completedCount < state.totalWorkers then
+            print("\nSending resume signal to all workers...")
+            modem.transmit(BROADCAST_CHANNEL, SERVER_CHANNEL, {
+                type = "start_mining"
+            })
+        end
+    else
+        print("Waiting for deployment requests...")
     end
+    
+    print("Press 'Q' to abort operation")
+    print("Press Ctrl+T to stop\n")
     
     -- Initial display
     updateDisplay()
