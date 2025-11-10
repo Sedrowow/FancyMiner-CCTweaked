@@ -167,16 +167,26 @@ local function updateDisplay()
             write(worker.status or "Init")
         end
         
-        -- Position and fuel if available
-        if worker.position then
+        -- GPS position if available, otherwise dig position
+        if worker.gps_position then
             setColor(colors.lightGray)
             setCursorPos(20, line)
-            write(string.format("Y:%d", worker.position.y or 0))
+            write(string.format("GPS:%d,%d,%d", 
+                math.floor(worker.gps_position.x or 0),
+                math.floor(worker.gps_position.y or 0),
+                math.floor(worker.gps_position.z or 0)))
+        elseif worker.position then
+            setColor(colors.lightGray)
+            setCursorPos(20, line)
+            write(string.format("Pos:%d,%d,%d", 
+                worker.position.x or 0,
+                worker.position.y or 0,
+                worker.position.z or 0))
         end
         
         if worker.fuel then
             setColor(colors.orange)
-            setCursorPos(30, line)
+            setCursorPos(45, line)
             write(string.format("F:%d", worker.fuel))
         end
         
@@ -748,6 +758,7 @@ local function handleMessage(message)
         
         state.workers[message.turtle_id].lastUpdate = os.clock()
         state.workers[message.turtle_id].position = message.position
+        state.workers[message.turtle_id].gps_position = message.gps_position
         state.workers[message.turtle_id].fuel = message.fuel
         state.workers[message.turtle_id].status = message.status
         updateDisplay()

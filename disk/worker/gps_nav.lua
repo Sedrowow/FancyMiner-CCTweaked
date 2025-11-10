@@ -20,13 +20,66 @@ local function getGPS(retries)
     return nil
 end
 
+-- Determine current cardinal direction by moving and checking GPS
+local function calibrateDirection()
+    local pos1 = getGPS(5)
+    if not pos1 then
+        return nil
+    end
+    
+    -- Try to move forward
+    if not turtle.forward() then
+        -- If blocked, try to dig and move
+        turtle.dig()
+        if not turtle.forward() then
+            return nil -- Can't determine direction if can't move
+        end
+    end
+    
+    local pos2 = getGPS(5)
+    if not pos2 then
+        -- Move back and fail
+        turtle.back()
+        return nil
+    end
+    
+    -- Calculate direction based on position change
+    local deltaX = pos2.x - pos1.x
+    local deltaZ = pos2.z - pos1.z
+    
+    local direction = nil
+    if math.abs(deltaX) > math.abs(deltaZ) then
+        direction = (deltaX > 0) and "east" or "west"
+    else
+        direction = (deltaZ > 0) and "south" or "north"
+    end
+    
+    -- Move back to original position
+    turtle.back()
+    
+    return direction
+end
+
 -- Initialize the GPS navigation system
-function init()
+-- If calibrate is true, will determine current facing direction
+function init(calibrate)
     startGPS = getGPS(5)
     if not startGPS then
         error("Failed to initialize GPS navigation - could not get GPS position")
     end
     currentGPS = {x = startGPS.x, y = startGPS.y, z = startGPS.z}
+    
+    -- If requested and cardinal direction not set, calibrate it
+    if calibrate and not dig.getCardinalDir() then
+        local direction = calibrateDirection()
+        if direction then
+            dig.setCardinalDir(direction)
+            print("GPS NAV: Calibrated direction to " .. direction)
+        else
+            print("GPS NAV: Warning - Could not calibrate direction")
+        end
+    end
+    
     return startGPS
 end
 

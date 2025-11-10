@@ -50,7 +50,9 @@ local function saveState()
     local file = fs.open(STATE_FILE, "w")
     file.write(textutils.serialize({
         config = config,
-        digLocation = dig.location()
+        digLocation = dig.location(),
+        lastGPS = gps_nav.getPosition(),
+        lastCardinalDir = dig.getCardinalDir()
     }))
     file.close()
 end
@@ -117,17 +119,50 @@ local function loadState()
             -- Job is active, restore position and continue
             log("Job is active - restoring state")
             
-            -- Re-initialize GPS navigation
+            -- Re-initialize GPS navigation and calibrate current facing direction
             if config.startGPS then
-                gps_nav.init()
-                log("GPS initialized - preserved start position: " .. 
+                -- Always calibrate on restart to determine current facing direction
+                gps_nav.init(true)
+                log("GPS initialized and calibrated - preserved start position: " .. 
                     config.startGPS.x .. "," .. config.startGPS.y .. "," .. config.startGPS.z)
+                log("Current facing direction: " .. tostring(dig.getCardinalDir()))
             end
             
-            -- Restore dig.lua position
+            -- Navigate to last GPS position first (handles turtle breakage/replacement)
+            if state.lastGPS then
+                log("Navigating to last GPS position: " .. textutils.serialize(state.lastGPS))
+                local navSuccess = gps_nav.goto(state.lastGPS.x, state.lastGPS.y, state.lastGPS.z)
+                if navSuccess then
+                    log("Successfully navigated to last position")
+                else
+                    log("Warning: Failed to navigate to last GPS position")
+                end
+                
+                -- Restore cardinal direction (turn to face the saved direction)
+                if state.lastCardinalDir then
+                    log("Turning to face saved direction: " .. state.lastCardinalDir)
+                    if gps_nav.faceDirection(state.lastCardinalDir) then
+                        log("Direction restored to: " .. state.lastCardinalDir)
+                    else
+                        log("Warning: Failed to turn to saved direction")
+                    end
+                else
+                    log("Warning: No cardinal direction saved in state")
+                end
+            else
+                log("Warning: No GPS position saved in state")
+            end
+            
+            -- Load dig.lua position (updates internal coordinate tracking without moving)
             if state.digLocation then
-                log("Restoring dig position: " .. textutils.serialize(state.digLocation))
-                dig.goto(state.digLocation)
+                log("Loading dig coordinate system: " .. textutils.serialize(state.digLocation))
+                local loc = state.digLocation
+                dig.setx(loc[1])
+                dig.sety(loc[2])
+                dig.setz(loc[3])
+                dig.setr(loc[4])
+                if loc[15] then dig.setlast(loc[15]) end
+                if loc[17] then dig.setBlocksProcessedTotal(loc[17]) end
             end
             
             return true
@@ -177,6 +212,9 @@ local function sendStatusUpdate(status)
         return
     end
     
+    -- Get GPS position if available
+    local gpsPos = gps_nav.getPosition()
+    
     modem.transmit(config.serverChannel, config.serverChannel, {
         type = "status_update",
         turtle_id = config.turtleID,
@@ -186,6 +224,7 @@ local function sendStatusUpdate(status)
             y = dig.gety(),
             z = dig.getz()
         },
+        gps_position = gpsPos,
         fuel = turtle.getFuelLevel()
     })
 end
