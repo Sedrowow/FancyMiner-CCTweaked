@@ -25,6 +25,26 @@ local config = {
     miningStarted = false
 }
 
+-- Persistent logging function
+local logFile = "worker_" .. os.getComputerID() .. ".log"
+local function log(message)
+    -- Print to screen (use write/print directly, not log)
+    print(message)
+    
+    -- Append to log file
+    local file = fs.open(logFile, "a")
+    if file then
+        file.writeLine("[" .. os.date("%H:%M:%S") .. "] " .. tostring(message))
+        file.close()
+    end
+end
+
+-- Clear old log on startup
+if fs.exists(logFile) then
+    fs.delete(logFile)
+end
+log("=== Worker Turtle Started ===")
+
 -- Save state to disk
 local function saveState()
     local file = fs.open(STATE_FILE, "w")
@@ -124,26 +144,6 @@ local function loadState()
     -- Non-coordinated worker or missing info, just return state
     return true
 end
-
--- Persistent logging function
-local logFile = "worker_" .. os.getComputerID() .. ".log"
-local function log(message)
-    -- Print to screen (use write/print directly, not log)
-    print(message)
-    
-    -- Append to log file
-    local file = fs.open(logFile, "a")
-    if file then
-        file.writeLine("[" .. os.date("%H:%M:%S") .. "] " .. tostring(message))
-        file.close()
-    end
-end
-
--- Clear old log on startup
-if fs.exists(logFile) then
-    fs.delete(logFile)
-end
-log("=== Worker Turtle Started ===")
 
 local modem = peripheral.find("ender_modem")
 if not modem then
