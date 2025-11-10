@@ -25,7 +25,6 @@ local state = {
     completedCount = 0,
     aborted = false,
     abortAckCount = 0,
-    firmwareCache = nil, -- Cached firmware files
     firmwareRequests = {}, -- Track which workers requested firmware
     zones = nil, -- Zone definitions (relative coordinates)
     gpsZones = nil, -- GPS zones with assignment tracking
@@ -207,16 +206,8 @@ end
 
 -- Save state to disk
 local function saveState()
-    -- Create a copy without firmware cache (too large and can be reloaded)
-    local stateCopy = {}
-    for k, v in pairs(state) do
-        if k ~= "firmwareCache" then
-            stateCopy[k] = v
-        end
-    end
-    
     local file = fs.open(STATE_FILE, "w")
-    file.write(textutils.serialize(stateCopy))
+    file.write(textutils.serialize(state))
     file.close()
 end
 
@@ -284,31 +275,20 @@ local function createChunks(content)
     return chunks
 end
 
--- Load firmware into cache
-local function loadFirmware(diskPath)
-    print("\nLoading firmware files into cache...")
-    
-    state.firmwareCache = {
-        ["quarry.lua"] = readDiskFile(diskPath, "quarry.lua"),
-        ["dig.lua"] = readDiskFile(diskPath, "dig.lua"),
-        ["flex.lua"] = readDiskFile(diskPath, "flex.lua"),
-        ["gps_nav.lua"] = readDiskFile(diskPath, "gps_nav.lua")
-    }
-    
-    print("Firmware cached and ready for distribution")
-end
-
 -- Send firmware to a specific worker
 local function sendFirmwareToWorker(turtleID)
-    if not state.firmwareCache then
-        print("Error: Firmware not loaded!")
+    local diskPath = checkDisk()
+    if not diskPath then
+        print("Error: Firmware disk not available!")
         return
     end
     
     print("Sending firmware to turtle " .. turtleID .. "...")
     
-    for filename, content in pairs(state.firmwareCache) do
+    local files = {"quarry.lua", "dig.lua", "flex.lua", "gps_nav.lua"}
+    for _, filename in ipairs(files) do
         print("  Sending " .. filename .. "...")
+        local content = readDiskFile(diskPath, filename)
         local chunks = createChunks(content)
         
         for i, chunk in ipairs(chunks) do
@@ -432,6 +412,11 @@ local function handleMessage(message)
         print("Start: " .. textutils.serialize(startGPS))
         
         -- Calculate GPS zones from relative zones
+        if not state.zones then
+            print("Error: state.zones is nil!")
+            return
+        end
+        
         state.gpsZones = {}
         for i, zone in ipairs(state.zones) do
             state.gpsZones[i] = {
@@ -449,10 +434,8 @@ local function handleMessage(message)
         saveState()
         updateDisplay()
         
-        -- Load firmware into cache (ready for worker requests)
+        -- Mark that firmware disk is available
         if not state.firmwareLoaded then
-            local diskPath = checkDisk()
-            loadFirmware(diskPath)
             state.firmwareLoaded = true
         end
         
@@ -462,8 +445,8 @@ local function handleMessage(message)
         local currentTime = os.clock()
         local lastRequest = state.firmwareRequests[turtleID] or 0
         
-        -- Only respond if we have firmware loaded and haven't sent recently (allow re-send after 30 seconds)
-        if state.firmwareCache and (currentTime - lastRequest) > 30 then
+        -- Only respond if haven't sent recently (allow re-send after 30 seconds)
+        if (currentTime - lastRequest) > 30 then
             print("Worker " .. turtleID .. " online, sending server info...")
             
             -- Send server channel response
@@ -768,18 +751,17 @@ local function main()
         print("Ready count: " .. state.readyCount)
         print("Completed: " .. state.completedCount)
         
-        -- Reload firmware if deployment was complete
+        -- Check if firmware disk is available
         if state.deploymentComplete and not state.firmwareLoaded then
-            print("\nReloading firmware from disk...")
+            print("\nChecking for firmware disk...")
             local success, err = pcall(function()
-                local diskPath = checkDisk()
-                loadFirmware(diskPath)
+                checkDisk()
                 state.firmwareLoaded = true
-                print("Firmware reloaded successfully")
+                print("Firmware disk available")
             end)
             if not success then
-                print("Warning: Could not reload firmware - " .. tostring(err))
-                print("Workers may need to be manually restarted")
+                print("Warning: Firmware disk not available - " .. tostring(err))
+                print("Workers may need firmware disk to be reinserted")
             end
         end
         
