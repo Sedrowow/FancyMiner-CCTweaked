@@ -39,8 +39,14 @@ local function setupWorkerTurtle()
     
     if success then
         print()
-        print("SUCCESS! This turtle is now ready to be deployed.")
-        print("Place it in the deployment turtle's inventory.")
+        print("SUCCESS! Worker turtle is ready.")
+        print()
+        print("The turtle will:")
+        print("  - Auto-start bootstrap on boot (startup.lua created)")
+        print("  - Download firmware from orchestration server")
+        print("  - Resume mining after restart from saved position")
+        print()
+        print("Place this turtle in the deployment turtle's inventory.")
         return true
     else
         print()
@@ -91,11 +97,27 @@ local function setupDeploymentTurtle()
     end
     
     print()
+    print("Creating startup file for auto-resume...")
+    
+    -- Create startup file that runs deploy.lua
+    local startupFile = fs.open("startup.lua", "w")
+    startupFile.writeLine("-- Auto-resume for Deployment Turtle")
+    startupFile.writeLine("print('Deployment Turtle Starting...')")
+    startupFile.writeLine("sleep(0.5)")
+    startupFile.writeLine("")
+    startupFile.writeLine("shell.run('deploy.lua')")
+    startupFile.close()
+    
+    print()
     print("SUCCESS! Deployment turtle is ready.")
+    print()
+    print("The turtle will:")
+    print("  - Auto-resume deployment after restart")
+    print("  - Resume worker operations if deployment done")
     print()
     print("Next steps:")
     printStep(1, "Position turtle at quarry origin")
-    printStep(2, "Run: deploy")
+    printStep(2, "Turtle will auto-start on next reboot, or run: deploy")
     printStep(3, "Enter server channel and quarry dimensions")
     
     return true
