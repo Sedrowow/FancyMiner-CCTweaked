@@ -343,14 +343,14 @@ state.workerPhaseComplete = true
 saveState()
 
 -- Wait for cleanup command
-print("\n=== Waiting for Cleanup Command ===\")
+print("\n=== Waiting for Cleanup Command ===")
 modem.open(SERVER_CHANNEL)
 
 while true do
     local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
     
     if type(message) == "table" and message.type == "cleanup_command" and message.turtle_id == state.deployerID then
-        print("\n=== Collecting Workers ===\")
+        print("\n=== Collecting Workers ===")
         
         for i = 1, #state.zones - 1 do
             print("Collecting worker " .. i)
@@ -365,7 +365,7 @@ while true do
         end
         
         dig.goto(0, 0, 0, 0)
-        print("\n=== Cleanup Complete ===\")
+        print("\n=== Cleanup Complete ===")
         break
     end
 end
