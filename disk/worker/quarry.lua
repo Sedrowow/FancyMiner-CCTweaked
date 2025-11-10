@@ -662,42 +662,36 @@ if config.isCoordinated then
         end
     end
     
-    -- Quarry mining function
+    -- Quarry mining function with serpentine pattern
     local function mineQuarry()
-        -- Workers start at dig.lua Y=0 (world Y=-1 where they were placed)
-        -- Mine down layer by layer from Y=0 to Y=-depth
-        -- Workers face south (rotation 180), mine east by going X=0 to X=-(width-1)
+        local xStep = -1
         for y = 0, -depth, -1 do
-            if y <= -skip then -- Only mine at skip depth and below
-                -- Mine current layer in a back-and-forth pattern
+            if y <= -skip then
                 for z = 0, length - 1 do
-                    -- Mine eastward: X=0 down to X=-(width-1)
-                    for x = 0, -(width - 1), -1 do
-                        -- Check fuel and inventory periodically
+                    local xStart = (xStep == -1) and 0 or -(width - 1)
+                    local xEnd = (xStep == -1) and -(width - 1) or 0
+                    
+                    for x = xStart, xEnd, xStep do
                         checkFuel()
                         checkInv()
-                        
-                        -- Navigate to position
                         dig.goto(x, y, z, 0)
                         
-                        -- Block any lava before digging
                         dig.blockLavaUp()
-                        dig.blockLava() -- forward
+                        dig.blockLava()
                         dig.blockLavaDown()
                         
-                        -- Dig at current position if needed
                         if turtle.detectDown() then
                             turtle.digDown()
                         end
                         
-                        -- Check for lava again after digging
                         dig.blockLavaDown()
                     end
+                    
+                    xStep = -xStep  -- Flip direction for next row
                 end
             end
         end
         
-        -- Return to start position after mining
         dig.goto(0, 0, 0, 0)
     end
     

@@ -623,6 +623,36 @@ local function handleMessage(message)
         local queue = (resourceType == "fuel") and state.fuelQueue or state.outputQueue
         local lockKey = (resourceType == "fuel") and "fuelLock" or "outputLock"
         
+        -- Check if turtle already has the lock
+        if state[lockKey] == message.turtle_id then
+            -- Turtle already has access, don't re-grant
+            print("Turtle " .. message.turtle_id .. " already has " .. resourceType .. " access")
+            return
+        end
+        
+        -- Check if turtle is already in queue
+        local alreadyQueued = false
+        local queuePos = 0
+        for i, id in ipairs(queue) do
+            if id == message.turtle_id then
+                alreadyQueued = true
+                queuePos = i
+                break
+            end
+        end
+        
+        if alreadyQueued then
+            -- Turtle already in queue, just send current position
+            modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
+                type = "queue_position",
+                turtle_id = message.turtle_id,
+                resource = resourceType,
+                position = queuePos
+            })
+            print("Turtle " .. message.turtle_id .. " already queued for " .. resourceType .. " (position " .. queuePos .. ")")
+            return
+        end
+        
         if not state[lockKey] then
             -- Resource available, grant immediately
             state[lockKey] = message.turtle_id
@@ -761,7 +791,8 @@ local function handleMessage(message)
     elseif message.type == "worker_status_check" then
         -- Worker checking if there's an active job
         local turtleID = message.turtle_id
-        local jobActive = state.deploymentComplete and not state.aborted and state.completedCount < state.totalWorkers
+        -- Job is active if: deployment complete, mining started, not aborted, and not all workers finished
+        local jobActive = state.deploymentComplete and state.miningStarted and not state.aborted and state.completedCount < state.totalWorkers
         
         print("Worker " .. turtleID .. " status check - job active: " .. tostring(jobActive))
         
