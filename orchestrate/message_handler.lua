@@ -378,6 +378,7 @@ local function handleWorkerStatusCheck(modem, serverChannel, state, message)
                       not state.aborted and state.completedCount < state.totalWorkers
     
     print("Worker " .. turtleID .. " status check - job active: " .. tostring(jobActive))
+    print("DEBUG: Transmitting on channel " .. serverChannel .. " to turtle " .. turtleID)
     
     modem.transmit(serverChannel, serverChannel, {
         type = "job_status_response",
@@ -385,6 +386,7 @@ local function handleWorkerStatusCheck(modem, serverChannel, state, message)
         job_active = jobActive
     })
     
+    print("DEBUG: Response sent")
     return false
 end
 
