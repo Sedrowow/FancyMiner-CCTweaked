@@ -746,18 +746,25 @@ function up(n)
     refuel()
     
     if turtle.detectUp() then
-      -- If there's a block above, we need to dig it
-      while not turtle.up() do
-        a,b = turtle.digUp()
-        if a then
-          dugtotal = dugtotal + 1 -- Count successful dig
-          addBlocksProcessed(1)
+      -- Check if it's a turtle before digging
+      local success, data = turtle.inspectUp()
+      if success and data.name and data.name:match("^computercraft:turtle") then
+        -- It's a turtle, wait instead of digging
+        sleep(0.5)
+      else
+        -- If there's a block above, we need to dig it
+        while not turtle.up() do
+          a,b = turtle.digUp()
+          if a then
+            dugtotal = dugtotal + 1 -- Count successful dig
+            addBlocksProcessed(1)
+          end
+          if b then break end
+          if attack then turtle.attackUp() end
         end
-        if b then break end
-        if attack then turtle.attackUp() end
+        -- Count the movement itself as processed
+        addBlocksProcessed(1)
       end
-      -- Count the movement itself as processed
-      addBlocksProcessed(1)
     else
       -- No block above, just move
       if turtle.up() then
@@ -781,18 +788,25 @@ function down(n)
     refuel()
     
     if turtle.detectDown() then
-      -- If there's a block below, we need to dig it
-      while not turtle.down() do
-        a,b = turtle.digDown()
-        if a then
-          dugtotal = dugtotal + 1 -- Count successful dig
-          addBlocksProcessed(1)
+      -- Check if it's a turtle before digging
+      local success, data = turtle.inspectDown()
+      if success and data.name and data.name:match("^computercraft:turtle") then
+        -- It's a turtle, wait instead of digging
+        sleep(0.5)
+      else
+        -- If there's a block below, we need to dig it
+        while not turtle.down() do
+          a,b = turtle.digDown()
+          if a then
+            dugtotal = dugtotal + 1 -- Count successful dig
+            addBlocksProcessed(1)
+          end
+          if b then break end
+          if attack then turtle.attackDown() end
         end
-        if b then break end
-        if attack then turtle.attackDown() end
+        -- Count the movement itself as processed
+        addBlocksProcessed(1)
       end
-      -- Count the movement itself as processed
-      addBlocksProcessed(1)
     else
       -- No block below, just move
       if turtle.down() then
@@ -816,18 +830,25 @@ function fwd(n)
     refuel()
     
     if turtle.detect() then
-      -- If there's a block in front, we need to dig it
-      while not turtle.forward() do
-        a,b = turtle.dig()
-        if a then
-          dugtotal = dugtotal + 1 -- Count successful dig
-          addBlocksProcessed(1)
+      -- Check if it's a turtle before digging
+      local success, data = turtle.inspect()
+      if success and data.name and data.name:match("^computercraft:turtle") then
+        -- It's a turtle, wait instead of digging
+        sleep(0.5)
+      else
+        -- If there's a block in front, we need to dig it
+        while not turtle.forward() do
+          a,b = turtle.dig()
+          if a then
+            dugtotal = dugtotal + 1 -- Count successful dig
+            addBlocksProcessed(1)
+          end
+          if b then break end
+          if attack then turtle.attack() end
         end
-        if b then break end
-        if attack then turtle.attack() end
+        -- Count the movement itself as processed
+        addBlocksProcessed(1)
       end
-      -- Count the movement itself as processed
-      addBlocksProcessed(1)
     else
       -- No block in front, just move
       if turtle.forward() then

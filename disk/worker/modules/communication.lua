@@ -152,9 +152,9 @@ function M.checkJobStatus(modem, serverChannel, turtleID, timeout)
         if event == "timer" and side == timer then
             return false, "Server timeout"
         elseif event == "modem_message" and type(message) == "table" then
-            if message.type == "job_status" and message.turtle_id == turtleID then
+            if message.type == "job_status_response" and message.turtle_id == turtleID then
                 os.cancelTimer(timer)
-                return message.active
+                return message.job_active
             end
         end
     end

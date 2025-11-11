@@ -95,7 +95,7 @@ local function main()
     print("Press Ctrl+T to stop\n")
     
     -- Initial display
-    local workerLines = Display.update(state)
+    local workerLines, queueLine, removeButtons, clearAllLine, queueType = Display.update(state)
     
     -- Start timeout check timer
     local timeoutCheckTimer = os.startTimer(10) -- Check every 10 seconds
@@ -109,14 +109,14 @@ local function main()
             if timedOut then
                 ResourceManager.grantNext(modem, SERVER_CHANNEL, state, "fuel")
                 State.save(state)
-                workerLines = Display.update(state)
+                workerLines, queueLine, removeButtons, clearAllLine, queueType = Display.update(state)
             end
             
             timedOut, turtleID = ResourceManager.checkTimeout(state, "output")
             if timedOut then
                 ResourceManager.grantNext(modem, SERVER_CHANNEL, state, "output")
                 State.save(state)
-                workerLines = Display.update(state)
+                workerLines, queueLine, removeButtons, clearAllLine, queueType = Display.update(state)
             end
             
             -- Check for firmware transfer timeouts
@@ -128,13 +128,34 @@ local function main()
         if event == "modem_message" then
             local side, channel, replyChannel, message, distance = p1, p2, p3, p4, p5
             handleMessage(message)
-            workerLines = Display.update(state)
+            workerLines, queueLine, removeButtons, clearAllLine, queueType = Display.update(state)
             
         elseif event == "monitor_touch" or event == "mouse_click" then
             local side, x, y = p1, p2, p3
             
-            if Display.handleTouch(x, y, workerLines) then
-                workerLines = Display.update(state)
+            local viewChanged, actionType, actionData = Display.handleTouch(x, y, workerLines, queueLine, removeButtons, clearAllLine, queueType)
+            
+            if actionType == "remove_from_queue" then
+                -- Remove specific entry from queue
+                local queue = (actionData.queueType == "fuel") and state.fuelQueue or state.outputQueue
+                local removedID = table.remove(queue, actionData.position)
+                print("Removed turtle " .. removedID .. " from " .. actionData.queueType .. " queue (position " .. actionData.position .. ")")
+                State.save(state)
+                workerLines, queueLine, removeButtons, clearAllLine, queueType = Display.update(state)
+            elseif actionType == "clear_queue" then
+                -- Clear entire queue
+                local queue = (actionData.queueType == "fuel") and state.fuelQueue or state.outputQueue
+                local count = #queue
+                if actionData.queueType == "fuel" then
+                    state.fuelQueue = {}
+                else
+                    state.outputQueue = {}
+                end
+                print("Cleared " .. actionData.queueType .. " queue (" .. count .. " entries removed)")
+                State.save(state)
+                workerLines, queueLine, removeButtons, clearAllLine, queueType = Display.update(state)
+            elseif viewChanged then
+                workerLines, queueLine, removeButtons, clearAllLine, queueType = Display.update(state)
             end
             
         elseif event == "key" then
@@ -154,7 +175,7 @@ local function main()
                 
                 print("Abort command sent. Waiting for workers to return...")
                 State.save(state)
-                workerLines = Display.update(state)
+                workerLines, queueLine, removeButtons, clearAllLine, queueType = Display.update(state)
             -- R key = 19
             elseif key == keys.r then
                 print("\n=== RESET INITIATED ===")
@@ -173,7 +194,7 @@ local function main()
                     
                     print("Server state reset complete.")
                     print("Waiting for new deployment requests...")
-                    workerLines = Display.update(state)
+                    workerLines, queueLine, removeButtons, clearAllLine, queueType = Display.update(state)
                 else
                     print("Reset cancelled.")
                 end

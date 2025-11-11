@@ -389,7 +389,11 @@ if config.isCoordinated then
                         dig.blockLavaDown()
                         
                         if turtle.detectDown() then
-                            turtle.digDown()
+                            -- Check if it's a turtle before digging
+                            local success, data = turtle.inspectDown()
+                            if not (success and data.name and data.name:match("^computercraft:turtle")) then
+                                turtle.digDown()
+                            end
                         end
                         
                         dig.blockLavaDown()

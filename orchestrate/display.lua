@@ -11,7 +11,7 @@ Display.displayHeight = 0
 
 -- Current view state
 Display.viewState = {
-    mode = "main", -- "main" or "worker"
+    mode = "main", -- "main", "worker", "fuel_queue", or "output_queue"
     selectedWorker = nil
 }
 
@@ -62,6 +62,112 @@ function Display.write(text)
     else
         term.write(text)
     end
+end
+
+-- Queue detail view
+function Display.showQueueDetail(state, queueType)
+    Display.clearDisplay()
+    Display.setCursorPos(1, 1)
+    
+    local queue = (queueType == "fuel") and state.fuelQueue or state.outputQueue
+    local lockKey = (queueType == "fuel") and "fuelLock" or "outputLock"
+    local title = (queueType == "fuel") and "Fuel Queue" or "Output Queue"
+    
+    Display.setColor(colors.white)
+    Display.write("=== " .. title .. " ===")
+    Display.setCursorPos(1, 2)
+    Display.setColor(colors.yellow)
+    Display.write("[Touch anywhere to return]")
+    Display.setCursorPos(1, 3)
+    Display.write("----------------------------")
+    
+    local line = 4
+    
+    -- Show current lock holder
+    if state[lockKey] then
+        Display.setColor(colors.white)
+        Display.setCursorPos(1, line)
+        Display.write("Current Access: ")
+        Display.setColor(colors.lime)
+        Display.write("Turtle " .. state[lockKey])
+        line = line + 1
+        
+        -- Show how long they've had access
+        local timeKey = (queueType == "fuel") and "fuelLockTime" or "outputLockTime"
+        if state[timeKey] then
+            Display.setColor(colors.lightGray)
+            Display.setCursorPos(3, line)
+            local elapsed = math.floor(os.clock() - state[timeKey])
+            Display.write("Time: " .. elapsed .. "s")
+            line = line + 1
+        end
+        line = line + 1
+    else
+        Display.setColor(colors.white)
+        Display.setCursorPos(1, line)
+        Display.write("Current Access: ")
+        Display.setColor(colors.lightGray)
+        Display.write("None (Available)")
+        line = line + 2
+    end
+    
+    -- Show queue with clear button
+    Display.setColor(colors.white)
+    Display.setCursorPos(1, line)
+    Display.write("Queue (" .. #queue .. " waiting): ")
+    
+    -- Add clear all button if queue not empty
+    local clearAllLine = nil
+    if #queue > 0 then
+        Display.setColor(colors.red)
+        Display.write("[Clear All]")
+        clearAllLine = line
+    end
+    line = line + 1
+    
+    -- Store line mapping for remove buttons
+    local removeButtons = {}
+    
+    if #queue == 0 then
+        Display.setColor(colors.lightGray)
+        Display.setCursorPos(3, line)
+        Display.write("(empty)")
+    else
+        for i, turtleID in ipairs(queue) do
+            if line >= Display.displayHeight then break end
+            
+            Display.setCursorPos(1, line)
+            Display.setColor(colors.red)
+            Display.write("[X]")
+            removeButtons[line] = i  -- Map line to queue position
+            
+            Display.setColor(colors.yellow)
+            Display.write(" " .. i .. ". ")
+            Display.setColor(colors.white)
+            Display.write("Turtle " .. turtleID)
+            
+            -- Show worker info if available
+            local worker = state.workers[turtleID]
+            if worker then
+                Display.setColor(colors.lightGray)
+                if worker.gps_position then
+                    Display.setCursorPos(20, line)
+                    Display.write(string.format("GPS:%d,%d,%d",
+                        math.floor(worker.gps_position.x or 0),
+                        math.floor(worker.gps_position.y or 0),
+                        math.floor(worker.gps_position.z or 0)))
+                end
+                if worker.fuel then
+                    Display.setCursorPos(40, line)
+                    Display.write("F:" .. worker.fuel)
+                end
+            end
+            
+            line = line + 1
+        end
+    end
+    
+    return removeButtons, clearAllLine
 end
 
 -- Worker detail view
@@ -283,11 +389,18 @@ function Display.showMainView(state)
         line = line + 1
     end
     
-    -- Queue status at bottom
-    if line < Display.displayHeight - 2 then
-        Display.setCursorPos(1, Display.displayHeight - 2)
+    -- Queue status at bottom (clickable)
+    local queueLine = Display.displayHeight - 2
+    if line < queueLine then
+        Display.setCursorPos(1, queueLine)
         Display.setColor(colors.white)
-        Display.write("Queues - Fuel: " .. #state.fuelQueue .. " | Output: " .. #state.outputQueue)
+        Display.write("Queues - ")
+        Display.setColor(colors.cyan)
+        Display.write("[Fuel: " .. #state.fuelQueue .. "]")
+        Display.setColor(colors.white)
+        Display.write(" | ")
+        Display.setColor(colors.cyan)
+        Display.write("[Output: " .. #state.outputQueue .. "]")
     end
     
     -- Status line at very bottom
@@ -303,34 +416,67 @@ function Display.showMainView(state)
         Display.write("Status: Waiting...")
     end
     
-    -- Return worker line mapping for touch detection
-    return workerLines
+    -- Return worker line mapping and queue line for touch detection
+    return workerLines, queueLine
 end
 
 -- Main update function
 function Display.update(state)
     if Display.viewState.mode == "worker" and Display.viewState.selectedWorker then
         Display.showWorkerDetail(state, Display.viewState.selectedWorker)
-        return nil
+        return nil, nil, nil, nil, nil
+    elseif Display.viewState.mode == "fuel_queue" then
+        local removeButtons, clearAllLine = Display.showQueueDetail(state, "fuel")
+        return nil, nil, removeButtons, clearAllLine, "fuel"
+    elseif Display.viewState.mode == "output_queue" then
+        local removeButtons, clearAllLine = Display.showQueueDetail(state, "output")
+        return nil, nil, removeButtons, clearAllLine, "output"
     else
         return Display.showMainView(state)
     end
 end
 
 -- Handle touch events
-function Display.handleTouch(x, y, workerLines)
-    if Display.viewState.mode == "worker" then
+-- Returns: viewChanged, actionType, actionData
+function Display.handleTouch(x, y, workerLines, queueLine, removeButtons, clearAllLine, queueType)
+    if Display.viewState.mode == "fuel_queue" or Display.viewState.mode == "output_queue" then
+        -- Check if clicking on remove button [X]
+        if removeButtons and removeButtons[y] and x >= 1 and x <= 3 then
+            -- Clicked on [X] button for a queue entry
+            return true, "remove_from_queue", {queueType = queueType, position = removeButtons[y]}
+        elseif clearAllLine and y == clearAllLine and x >= 28 then
+            -- Clicked on [Clear All] button (starts around x=28)
+            return true, "clear_queue", {queueType = queueType}
+        else
+            -- Any other touch returns to main
+            Display.viewState.mode = "main"
+            Display.viewState.selectedWorker = nil
+            return true, nil, nil
+        end
+    elseif Display.viewState.mode == "worker" then
         -- Any touch in worker view returns to main
         Display.viewState.mode = "main"
         Display.viewState.selectedWorker = nil
-        return true -- Indicates view changed
-    elseif Display.viewState.mode == "main" and workerLines and workerLines[y] then
-        -- Touch on a worker line - show details
-        Display.viewState.mode = "worker"
-        Display.viewState.selectedWorker = workerLines[y]
-        return true -- Indicates view changed
+        return true, nil, nil
+    elseif Display.viewState.mode == "main" then
+        if workerLines and workerLines[y] then
+            -- Touch on a worker line - show worker details
+            Display.viewState.mode = "worker"
+            Display.viewState.selectedWorker = workerLines[y]
+            return true, nil, nil
+        elseif queueLine and y == queueLine then
+            -- Touch on queue line - determine which queue based on x position
+            -- "Queues - [Fuel: X] | [Output: Y]"
+            -- Fuel is roughly at x 10-20, Output at x 25+
+            if x < 24 then
+                Display.viewState.mode = "fuel_queue"
+            else
+                Display.viewState.mode = "output_queue"
+            end
+            return true, nil, nil
+        end
     end
-    return false
+    return false, nil, nil
 end
 
 return Display
