@@ -749,8 +749,30 @@ function up(n)
       -- Check if it's a turtle before digging
       local success, data = turtle.inspectUp()
       if success and data.name and data.name:match("^computercraft:turtle") then
-        -- It's a turtle, wait instead of digging
-        sleep(0.5)
+        -- It's a turtle, retry up to 3 times
+        local retries = 0
+        while retries < 3 do
+          sleep(0.5)
+          if not turtle.detectUp() then
+            break  -- Turtle moved, we can proceed
+          end
+          local checkSuccess, checkData = turtle.inspectUp()
+          if not (checkSuccess and checkData.name and checkData.name:match("^computercraft:turtle")) then
+            break  -- Not a turtle anymore
+          end
+          retries = retries + 1
+        end
+        
+        if retries >= 3 then
+          -- Deadlock detected, both turtles move left to pass each other
+          turnl()
+          if fwd() then
+            sleep(math.random(5, 15) / 10)  -- Random 0.5-1.5s delay to desync
+            back()
+          end
+          turnr()
+        end
+        x = x - 1  -- Retry this iteration
       else
         -- If there's a block above, we need to dig it
         while not turtle.up() do
@@ -764,17 +786,17 @@ function up(n)
         end
         -- Count the movement itself as processed
         addBlocksProcessed(1)
+        update("up")
       end
     else
       -- No block above, just move
       if turtle.up() then
         addBlocksProcessed(1)
+        update("up")
       else
         return false
       end
     end
-    
-    update("up")
   end
   return true
 end
@@ -791,8 +813,30 @@ function down(n)
       -- Check if it's a turtle before digging
       local success, data = turtle.inspectDown()
       if success and data.name and data.name:match("^computercraft:turtle") then
-        -- It's a turtle, wait instead of digging
-        sleep(0.5)
+        -- It's a turtle, retry up to 3 times
+        local retries = 0
+        while retries < 3 do
+          sleep(0.5)
+          if not turtle.detectDown() then
+            break  -- Turtle moved, we can proceed
+          end
+          local checkSuccess, checkData = turtle.inspectDown()
+          if not (checkSuccess and checkData.name and checkData.name:match("^computercraft:turtle")) then
+            break  -- Not a turtle anymore
+          end
+          retries = retries + 1
+        end
+        
+        if retries >= 3 then
+          -- Deadlock detected, both turtles move left to pass each other
+          turnl()
+          if fwd() then
+            sleep(math.random(5, 15) / 10)  -- Random 0.5-1.5s delay to desync
+            back()
+          end
+          turnr()
+        end
+        x = x - 1  -- Retry this iteration
       else
         -- If there's a block below, we need to dig it
         while not turtle.down() do
@@ -806,17 +850,17 @@ function down(n)
         end
         -- Count the movement itself as processed
         addBlocksProcessed(1)
+        update("down")
       end
     else
       -- No block below, just move
       if turtle.down() then
         addBlocksProcessed(1)
+        update("down")
       else
         return false
       end
     end
-    
-    update("down")
   end
   return true
 end
@@ -833,8 +877,30 @@ function fwd(n)
       -- Check if it's a turtle before digging
       local success, data = turtle.inspect()
       if success and data.name and data.name:match("^computercraft:turtle") then
-        -- It's a turtle, wait instead of digging
-        sleep(0.5)
+        -- It's a turtle, retry up to 3 times
+        local retries = 0
+        while retries < 3 do
+          sleep(0.5)
+          if not turtle.detect() then
+            break  -- Turtle moved, we can proceed
+          end
+          local checkSuccess, checkData = turtle.inspect()
+          if not (checkSuccess and checkData.name and checkData.name:match("^computercraft:turtle")) then
+            break  -- Not a turtle anymore
+          end
+          retries = retries + 1
+        end
+        
+        if retries >= 3 then
+          -- Deadlock detected, both turtles move left to pass each other
+          turnl()
+          if fwd() then
+            sleep(math.random(5, 15) / 10)  -- Random 0.5-1.5s delay to desync
+            back()
+          end
+          turnr()
+        end
+        x = x - 1  -- Retry this iteration
       else
         -- If there's a block in front, we need to dig it
         while not turtle.forward() do
@@ -848,17 +914,17 @@ function fwd(n)
         end
         -- Count the movement itself as processed
         addBlocksProcessed(1)
+        update("fwd")
       end
     else
       -- No block in front, just move
       if turtle.forward() then
         addBlocksProcessed(1)
+        update("fwd")
       else
         return false
       end
     end
-    
-    update("fwd")
   end
   return true
 end
