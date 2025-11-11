@@ -41,7 +41,7 @@ function M.checkVersion(modem, serverChannel, turtleID, logger)
                     logger.log("Firmware is up to date (" .. (localVersion or "unknown") .. ")")
                     needsUpdate = false
                 else
-                    logger.log("Firmware update available: " .. message.server_version)
+                    logger.log("Firmware update available: " .. (message.server_version or "unknown"))
                 end
                 os.cancelTimer(versionTimeout)
                 break

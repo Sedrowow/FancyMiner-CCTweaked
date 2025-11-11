@@ -106,8 +106,8 @@ local function handleVersionCheck(modem, serverChannel, state, message)
     
     -- Get server version
     local serverVersion = nil
-    if fs.exists("version.txt") then
-        local f = fs.open("version.txt", "r")
+    if fs.exists(".local_version.txt") then
+        local f = fs.open(".local_version.txt", "r")
         serverVersion = f.readAll()
         f.close()
     end
@@ -475,8 +475,8 @@ function MessageHandler.handle(modem, serverChannel, broadcastChannel, state, me
     elseif message.type == "get_version" then
         local turtleID = message.turtle_id
         local serverVersion = nil
-        if fs.exists("version.txt") then
-            local f = fs.open("version.txt", "r")
+        if fs.exists(".local_version.txt") then
+            local f = fs.open(".local_version.txt", "r")
             serverVersion = f.readAll()
             f.close()
         end
