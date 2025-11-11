@@ -246,12 +246,9 @@ local function initializeWorker()
     logger.log("Waiting for start signal...")
     communication.waitForStartSignal(modem)
     logger.log("Start signal received!")
-            config.miningStarted = true
-            saveState()
-            sendStatusUpdate("mining")
-            break
-        end
-    end
+    config.miningStarted = true
+    saveState()
+    sendStatusUpdate("mining")
 end
 
 -- Modified inventory check for coordinated mode
