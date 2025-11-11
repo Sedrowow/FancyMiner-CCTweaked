@@ -444,8 +444,8 @@ function Display.handleTouch(x, y, workerLines, queueLine, removeButtons, clearA
         if removeButtons and removeButtons[y] and x >= 1 and x <= 3 then
             -- Clicked on [X] button for a queue entry
             return true, "remove_from_queue", {queueType = queueType, position = removeButtons[y]}
-        elseif clearAllLine and y == clearAllLine and x >= 28 then
-            -- Clicked on [Clear All] button (starts around x=28)
+        elseif clearAllLine and y == clearAllLine and x >= 19 then
+            -- Clicked on [Clear All] button (starts around x=19-22 depending on queue size)
             return true, "clear_queue", {queueType = queueType}
         else
             -- Any other touch returns to main
