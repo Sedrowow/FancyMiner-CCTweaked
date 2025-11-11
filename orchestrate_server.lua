@@ -91,6 +91,7 @@ local function main()
     end
     
     print("Press 'Q' to abort operation")
+    print("Press 'R' to reset server state")
     print("Press Ctrl+T to stop\n")
     
     -- Initial display
@@ -154,6 +155,28 @@ local function main()
                 print("Abort command sent. Waiting for workers to return...")
                 State.save(state)
                 workerLines = Display.update(state)
+            -- R key = 19
+            elseif key == keys.r then
+                print("\n=== RESET INITIATED ===")
+                print("Are you sure you want to reset the server state? (Y/N)")
+                
+                local confirmEvent, confirmKey = os.pullEvent("key")
+                -- Y key = 21
+                if confirmKey == keys.y then
+                    print("Resetting server state...")
+                    state = State.reset()
+                    
+                    -- Broadcast reset to workers (optional - they can reconnect)
+                    modem.transmit(BROADCAST_CHANNEL, SERVER_CHANNEL, {
+                        type = "server_reset"
+                    })
+                    
+                    print("Server state reset complete.")
+                    print("Waiting for new deployment requests...")
+                    workerLines = Display.update(state)
+                else
+                    print("Reset cancelled.")
+                end
             end
         end
     end

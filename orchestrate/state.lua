@@ -64,4 +64,12 @@ function State.load()
     return State.create(), false
 end
 
+-- Clear state file and return fresh state
+function State.reset()
+    if fs.exists(State.STATE_FILE) then
+        fs.delete(State.STATE_FILE)
+    end
+    return State.create()
+end
+
 return State
