@@ -37,6 +37,9 @@ local function deploy()
         state = savedState
         SERVER_CHANNEL = state.serverChannel
         
+        -- Reinitialize modem with saved server channel
+        modem = communication.initModem(SERVER_CHANNEL)
+        
         local shouldContinue, deploymentComplete, err = 
             communication.checkPreviousDeployment(modem, SERVER_CHANNEL, state.deployerID, 10)
         
