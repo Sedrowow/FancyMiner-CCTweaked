@@ -135,8 +135,16 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
         print("  Checking zone " .. matchedZone .. ": X[" .. gpsZone.gps_xmin .. "-" .. gpsZone.gps_xmax .. "] Z[" .. gpsZone.gps_zmin .. "-" .. gpsZone.gps_zmax .. "]")
         
         if gpsZone.assigned then
-            print("  Warning: Zone " .. matchedZone .. " already assigned to turtle " .. gpsZone.turtle_id)
-            print("  Multiple workers in same zone!")
+            print("  ERROR: Zone " .. matchedZone .. " already assigned to turtle " .. gpsZone.turtle_id)
+            print("  Cannot assign multiple workers to same zone!")
+            print("  Turtle " .. turtleID .. " must be repositioned.")
+            
+            modem.transmit(serverChannel, serverChannel, {
+                type = "assignment_error",
+                turtle_id = turtleID,
+                error = "Zone already assigned. Reposition turtle and try again."
+            })
+            return false
         end
         
         gpsZone.assigned = true

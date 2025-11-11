@@ -58,6 +58,7 @@ function ZoneManager.createGPSZones(zones, startGPS)
 end
 
 -- Find zone that contains a GPS position
+-- For boundary positions, prefer the zone with the lower index
 function ZoneManager.findZoneForPosition(gpsZones, workerGPS)
     if not gpsZones or not workerGPS then
         return nil
@@ -67,6 +68,8 @@ function ZoneManager.findZoneForPosition(gpsZones, workerGPS)
         local gpsZone = gpsZones[i]
         
         -- Check if worker's position is within this zone's boundaries
+        -- Note: If a worker is exactly on the boundary between two zones,
+        -- we'll assign them to the first matching zone (lower index)
         if workerGPS.x >= gpsZone.gps_xmin and workerGPS.x <= gpsZone.gps_xmax and
            workerGPS.z >= gpsZone.gps_zmin and workerGPS.z <= gpsZone.gps_zmax then
             return i, gpsZone
