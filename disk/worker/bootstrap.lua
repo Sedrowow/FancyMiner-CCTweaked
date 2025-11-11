@@ -45,7 +45,13 @@ else
     end
 end
 
--- Receive all firmware files including modules (for updates after initial setup)
+-- Open server channel for receiving firmware
+modem.open(SERVER_CHANNEL)
+logger.log("Listening on server channel: " .. SERVER_CHANNEL)
+
+-- Receive firmware files (main files only - modules are pre-installed)
+-- On first boot, worker gets modules via setup. On updates, server can push module updates too.
+-- To keep bootstrap simple and fast, we only request main files here.
 firmware.receiveFirmware(modem, SERVER_CHANNEL, turtleID, 
     {"quarry.lua", "dig.lua", "flex.lua",
      "modules/logger.lua", "modules/gps_utils.lua", "modules/gps_navigation.lua",

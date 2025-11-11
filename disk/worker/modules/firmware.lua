@@ -30,7 +30,7 @@ function M.receiveFirmware(modem, serverChannel, turtleID, requiredFiles, logger
     while not checkAllFilesReceived(filesReceived, requiredFiles) do
         local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
         
-        if type(message) == "table" and message.type == "file_chunk" then
+        if type(message) == "table" and message.type == "file_chunk" and message.turtle_id == turtleID then
             local filename = message.filename
             
             -- Only process files we need
