@@ -107,6 +107,7 @@ local function main()
         if event == "timer" and p1 == timeoutCheckTimer then
             local timedOut, turtleID = ResourceManager.checkTimeout(state, "fuel")
             if timedOut then
+                print("DEBUG: Fuel timeout triggered for turtle " .. turtleID)
                 ResourceManager.grantNext(modem, SERVER_CHANNEL, state, "fuel")
                 State.save(state)
                 workerLines, queueLine, removeButtons, clearAllLine, queueType = Display.update(state)
@@ -114,6 +115,7 @@ local function main()
             
             timedOut, turtleID = ResourceManager.checkTimeout(state, "output")
             if timedOut then
+                print("DEBUG: Output timeout triggered for turtle " .. turtleID)
                 ResourceManager.grantNext(modem, SERVER_CHANNEL, state, "output")
                 State.save(state)
                 workerLines, queueLine, removeButtons, clearAllLine, queueType = Display.update(state)

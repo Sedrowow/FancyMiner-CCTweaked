@@ -11,8 +11,11 @@ function ResourceManager.checkTimeout(state, resourceType)
     local lockKey = (resourceType == "fuel") and "fuelLock" or "outputLock"
     local timeKey = (resourceType == "fuel") and "fuelLockTime" or "outputLockTime"
     
+    print("DEBUG checkTimeout: " .. resourceType .. " lock=" .. tostring(state[lockKey]) .. " time=" .. tostring(state[timeKey]))
+    
     if state[lockKey] and state[timeKey] then
         local elapsed = os.clock() - state[timeKey]
+        print("DEBUG: " .. resourceType .. " elapsed=" .. math.floor(elapsed) .. "s, timeout=" .. ResourceManager.RESOURCE_TIMEOUT .. "s")
         if elapsed > ResourceManager.RESOURCE_TIMEOUT then
             print("WARNING: Turtle " .. state[lockKey] .. " timed out on " .. resourceType .. " (" .. math.floor(elapsed) .. "s)")
             print("Force-releasing " .. resourceType .. " lock...")
@@ -69,6 +72,17 @@ function ResourceManager.handleRequest(modem, serverChannel, state, turtleID, re
     -- Check if turtle already has the lock
     if state[lockKey] == turtleID then
         print("Turtle " .. turtleID .. " already has " .. resourceType .. " access")
+        -- Send confirmation so worker doesn't hang waiting
+        local chestPos = state.chestPositions[resourceType]
+        local approachDir = "down"
+        
+        modem.transmit(serverChannel, serverChannel, {
+            type = "resource_granted",
+            turtle_id = turtleID,
+            resource = resourceType,
+            chest_gps = chestPos,
+            approach_direction = approachDir
+        })
         return false
     end
     
