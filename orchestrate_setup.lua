@@ -23,12 +23,37 @@ end
 
 local function setupWorkerTurtle()
     printTitle("Worker Turtle Setup")
-    print("This will install the bootstrap loader")
+    print("This will install the bootstrap loader and modules")
     print("that allows the turtle to receive firmware.")
     print()
     
     if not confirm("Continue with worker setup?") then
         return false
+    end
+    
+    print()
+    print("Creating modules directory...")
+    if not fs.exists("modules") then
+        fs.makeDir("modules")
+    end
+    
+    print("Downloading worker modules...")
+    
+    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/disk/worker/modules/"
+    local moduleFiles = {
+        "logger.lua", "gps_utils.lua", "gps_navigation.lua",
+        "state.lua", "communication.lua", "resource_manager.lua", "firmware.lua"
+    }
+    
+    for _, filename in ipairs(moduleFiles) do
+        print("Downloading modules/" .. filename .. "...")
+        local targetPath = "modules/" .. filename
+        fs.delete(targetPath)
+        local success = shell.run("wget", baseUrl .. filename, targetPath, "-f")
+        if not success then
+            print("ERROR: Failed to download module " .. filename)
+            return false
+        end
     end
     
     print()

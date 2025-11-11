@@ -17,7 +17,7 @@ end
 function M.receiveFirmware(modem, serverChannel, turtleID, requiredFiles, logger)
     requiredFiles = requiredFiles or {"quarry.lua", "dig.lua", "flex.lua"}
     
-    -- Create modules directory if needed
+    -- Create modules directory if needed (for updates)
     if not fs.exists("modules") then
         fs.makeDir("modules")
     end

@@ -52,6 +52,7 @@ function Firmware.readDiskFile(diskPath, filename)
 end
 
 -- Get all firmware files to send
+-- Note: Modules are pre-installed via setup script, but can be updated via firmware distribution
 function Firmware.getFirmwareFiles()
     return {
         "quarry.lua",
