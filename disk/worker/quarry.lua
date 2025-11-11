@@ -362,6 +362,14 @@ if config.isCoordinated then
         end
     end
     
+    -- Periodic status updater task
+    local function statusUpdater()
+        while not config.aborted do
+            os.sleep(statusUpdateInterval)
+            sendStatusUpdate("mining")
+        end
+    end
+    
     -- Quarry mining function with serpentine pattern
     local function mineQuarry()
         local xStep = -1
@@ -399,7 +407,8 @@ if config.isCoordinated then
     local miningSuccess, miningError = pcall(function()
         parallel.waitForAny(
             mineQuarry,
-            abortListener
+            abortListener,
+            statusUpdater
         )
     end)
     
