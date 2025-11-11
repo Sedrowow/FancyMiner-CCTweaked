@@ -49,14 +49,26 @@ end
 modem.open(SERVER_CHANNEL)
 logger.log("Listening on server channel: " .. SERVER_CHANNEL)
 
--- Receive firmware files (main files only - modules are pre-installed)
--- On first boot, worker gets modules via setup. On updates, server can push module updates too.
--- To keep bootstrap simple and fast, we only request main files here.
-firmware.receiveFirmware(modem, SERVER_CHANNEL, turtleID, 
-    {"quarry.lua", "dig.lua", "flex.lua",
-     "modules/logger.lua", "modules/gps_utils.lua", "modules/gps_navigation.lua",
-     "modules/state.lua", "modules/communication.lua", "modules/resource_manager.lua",
-     "modules/firmware.lua"}, logger)
+-- Check if firmware update is needed
+local needsUpdate = firmware.checkVersion(modem, SERVER_CHANNEL, turtleID, logger)
+
+-- Receive firmware files only if needed
+if needsUpdate then
+    logger.log("Downloading firmware files...")
+    firmware.receiveFirmware(modem, SERVER_CHANNEL, turtleID, 
+        {"quarry.lua", "dig.lua", "flex.lua"}, logger)
+    
+    -- Save the new version
+    if fs.exists(".firmware_version_new") then
+        if fs.exists(".firmware_version") then
+            fs.delete(".firmware_version")
+        end
+        fs.move(".firmware_version_new", ".firmware_version")
+        logger.log("Firmware version updated")
+    end
+else
+    logger.log("Skipping firmware download")
+end
 
 -- Get GPS position for zone matching
 logger.log("Getting GPS position...")

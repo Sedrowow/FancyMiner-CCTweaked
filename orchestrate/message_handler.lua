@@ -116,6 +116,33 @@ local function handleWorkerOnline(modem, serverChannel, broadcastChannel, state,
     return false -- No state save needed yet
 end
 
+-- Handle version_check message
+local function handleVersionCheck(modem, serverChannel, state, message)
+    local turtleID = message.turtle_id
+    local workerVersion = message.current_version
+    
+    -- Get server version
+    local serverVersion = nil
+    if fs.exists("version.txt") then
+        local f = fs.open("version.txt", "r")
+        serverVersion = f.readAll()
+        f.close()
+    end
+    
+    local upToDate = (workerVersion == serverVersion and workerVersion ~= nil)
+    
+    print("Worker " .. turtleID .. " version check: worker=" .. (workerVersion or "none") .. ", server=" .. (serverVersion or "unknown") .. ", up-to-date=" .. tostring(upToDate))
+    
+    modem.transmit(serverChannel, serverChannel, {
+        type = "version_response",
+        turtle_id = turtleID,
+        server_version = serverVersion,
+        up_to_date = upToDate
+    })
+    
+    return false
+end
+
 -- Handle file_received message
 local function handleFileReceived(message)
     print("Turtle " .. message.turtle_id .. " received " .. message.filename)
@@ -432,6 +459,24 @@ function MessageHandler.handle(modem, serverChannel, broadcastChannel, state, me
         
     elseif message.type == "worker_online" then
         needsSave = handleWorkerOnline(modem, serverChannel, broadcastChannel, state, message)
+        
+    elseif message.type == "version_check" then
+        needsSave = handleVersionCheck(modem, serverChannel, state, message)
+        
+    elseif message.type == "get_version" then
+        local turtleID = message.turtle_id
+        local serverVersion = nil
+        if fs.exists("version.txt") then
+            local f = fs.open("version.txt", "r")
+            serverVersion = f.readAll()
+            f.close()
+        end
+        modem.transmit(serverChannel, serverChannel, {
+            type = "version_info",
+            turtle_id = turtleID,
+            version = serverVersion
+        })
+        needsSave = false
         
     elseif message.type == "file_received" then
         needsSave = handleFileReceived(message)

@@ -3,6 +3,55 @@
 
 local M = {}
 
+-- Check firmware version with server
+function M.checkVersion(modem, serverChannel, turtleID, logger)
+    -- Check local firmware version
+    local localVersion = nil
+    if fs.exists(".firmware_version") then
+        local f = fs.open(".firmware_version", "r")
+        localVersion = f.readAll()
+        f.close()
+        logger.log("Local firmware version: " .. localVersion)
+    else
+        logger.log("No local firmware version found")
+    end
+    
+    -- Request firmware version from server
+    logger.log("Checking firmware version with server...")
+    modem.transmit(serverChannel, serverChannel, {
+        type = "version_check",
+        turtle_id = turtleID,
+        current_version = localVersion
+    })
+    
+    -- Wait for version response
+    local needsUpdate = true
+    local versionTimeout = os.startTimer(10)
+    
+    while true do
+        local event, p1, p2, p3, p4 = os.pullEvent()
+        
+        if event == "timer" and p1 == versionTimeout then
+            logger.log("Version check timeout, proceeding with firmware download")
+            break
+        elseif event == "modem_message" then
+            local message = p4
+            if type(message) == "table" and message.type == "version_response" and message.turtle_id == turtleID then
+                if message.up_to_date then
+                    logger.log("Firmware is up to date (" .. (localVersion or "unknown") .. ")")
+                    needsUpdate = false
+                else
+                    logger.log("Firmware update available: " .. message.server_version)
+                end
+                os.cancelTimer(versionTimeout)
+                break
+            end
+        end
+    end
+    
+    return needsUpdate
+end
+
 -- Check if all required files have been received
 local function checkAllFilesReceived(filesReceived, requiredFiles)
     for _, filename in ipairs(requiredFiles) do
@@ -88,6 +137,34 @@ function M.receiveFirmware(modem, serverChannel, turtleID, requiredFiles, logger
     end
     
     logger.log("All firmware received!")
+    
+    -- Request version info from server to save locally
+    modem.transmit(serverChannel, serverChannel, {
+        type = "get_version",
+        turtle_id = turtleID
+    })
+    
+    -- Wait briefly for version response
+    local versionTimer = os.startTimer(2)
+    while true do
+        local event, p1, p2, p3, p4 = os.pullEvent()
+        if event == "timer" and p1 == versionTimer then
+            break
+        elseif event == "modem_message" then
+            local msg = p4
+            if type(msg) == "table" and msg.type == "version_info" and msg.turtle_id == turtleID then
+                if msg.version then
+                    local f = fs.open(".firmware_version_new", "w")
+                    f.write(msg.version)
+                    f.close()
+                    logger.log("Version saved: " .. msg.version)
+                end
+                os.cancelTimer(versionTimer)
+                break
+            end
+        end
+    end
+    
     return true
 end
 
