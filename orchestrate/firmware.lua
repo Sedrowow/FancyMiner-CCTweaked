@@ -109,7 +109,7 @@ function Firmware.sendToWorker(modem, serverChannel, turtleID)
                 total_chunks = #chunks,
                 data = chunk
             })
-            sleep(0.05) -- Small delay between chunks
+            sleep(0.1) -- Small delay between chunks to prevent overwhelming receiver
         end
     end
     

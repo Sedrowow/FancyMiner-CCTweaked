@@ -102,7 +102,7 @@ local function main()
     while true do
         local event, p1, p2, p3, p4, p5 = os.pullEvent()
         
-        -- Check for resource timeouts periodically
+        -- Check for resource timeouts and firmware transfer timeouts periodically
         if event == "timer" and p1 == timeoutCheckTimer then
             local timedOut, turtleID = ResourceManager.checkTimeout(state, "fuel")
             if timedOut then
@@ -117,6 +117,9 @@ local function main()
                 State.save(state)
                 workerLines = Display.update(state)
             end
+            
+            -- Check for firmware transfer timeouts
+            MessageHandler.checkFirmwareTimeouts(modem, SERVER_CHANNEL, BROADCAST_CHANNEL, state)
             
             timeoutCheckTimer = os.startTimer(10)
         end

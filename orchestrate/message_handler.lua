@@ -95,8 +95,22 @@ local function handleWorkerOnline(modem, serverChannel, broadcastChannel, state,
         
         state.firmwareRequests[turtleID] = currentTime
         
-        sleep(0.5)
+        -- Track firmware transfer state
+        if not state.firmwareTransfers then
+            state.firmwareTransfers = {}
+        end
+        
+        state.firmwareTransfers[turtleID] = {
+            startTime = currentTime,
+            attempts = (state.firmwareTransfers[turtleID] and state.firmwareTransfers[turtleID].attempts or 0) + 1,
+            complete = false
+        }
+        
+        sleep(1.5)
         Firmware.sendToWorker(modem, serverChannel, turtleID)
+        
+        -- Start timer for firmware completion check
+        state.firmwareTransfers[turtleID].checkTimer = os.startTimer(30)
     end
     
     return false -- No state save needed yet
@@ -105,6 +119,21 @@ end
 -- Handle file_received message
 local function handleFileReceived(message)
     print("Turtle " .. message.turtle_id .. " received " .. message.filename)
+    return false
+end
+
+-- Handle firmware_complete message
+local function handleFirmwareComplete(state, message)
+    local turtleID = message.turtle_id
+    print("Turtle " .. turtleID .. " confirmed firmware reception complete")
+    
+    if state.firmwareTransfers and state.firmwareTransfers[turtleID] then
+        state.firmwareTransfers[turtleID].complete = true
+        if state.firmwareTransfers[turtleID].checkTimer then
+            os.cancelTimer(state.firmwareTransfers[turtleID].checkTimer)
+        end
+    end
+    
     return false
 end
 
@@ -340,6 +369,53 @@ local function handleAbortAck(state, message)
     return true
 end
 
+-- Check for firmware transfer timeouts and retry if needed
+function MessageHandler.checkFirmwareTimeouts(modem, serverChannel, broadcastChannel, state)
+    if not state.firmwareTransfers then
+        return
+    end
+    
+    -- Fast exit if no transfers in progress
+    local hasActiveTransfers = false
+    for _, transfer in pairs(state.firmwareTransfers) do
+        if not transfer.complete then
+            hasActiveTransfers = true
+            break
+        end
+    end
+    
+    if not hasActiveTransfers then
+        return
+    end
+    
+    local currentTime = os.clock()
+    
+    for turtleID, transfer in pairs(state.firmwareTransfers) do
+        if not transfer.complete and transfer.attempts < 3 then
+            -- Check if enough time has passed (30 seconds)
+            if (currentTime - transfer.startTime) > 30 then
+                print("Firmware transfer timeout for turtle " .. turtleID .. " (attempt " .. transfer.attempts .. "), retrying...")
+                
+                -- Reset timer and resend
+                transfer.startTime = currentTime
+                transfer.attempts = transfer.attempts + 1
+                
+                modem.transmit(broadcastChannel, serverChannel, {
+                    type = "server_response",
+                    turtle_id = turtleID,
+                    server_channel = serverChannel
+                })
+                
+                sleep(1.5)
+                Firmware.sendToWorker(modem, serverChannel, turtleID)
+            end
+        elseif transfer.attempts >= 3 and not transfer.complete then
+            print("Firmware transfer failed for turtle " .. turtleID .. " after 3 attempts")
+            state.firmwareTransfers[turtleID] = nil
+        end
+    end
+end
+
 -- Main message handler dispatcher
 function MessageHandler.handle(modem, serverChannel, broadcastChannel, state, message)
     if type(message) ~= "table" then 
@@ -359,6 +435,9 @@ function MessageHandler.handle(modem, serverChannel, broadcastChannel, state, me
         
     elseif message.type == "file_received" then
         needsSave = handleFileReceived(message)
+        
+    elseif message.type == "firmware_complete" then
+        needsSave = handleFirmwareComplete(state, message)
         
     elseif message.type == "ready_for_assignment" then
         needsSave = handleReadyForAssignment(modem, serverChannel, state, message)
