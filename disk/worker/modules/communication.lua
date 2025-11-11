@@ -139,6 +139,7 @@ end
 function M.checkJobStatus(modem, serverChannel, turtleID, timeout)
     timeout = timeout or 30
     
+    print("DEBUG: Sending status check on channel " .. serverChannel .. " for turtle " .. turtleID)
     M.sendMessage(modem, serverChannel, {
         type = "worker_status_check",
         turtle_id = turtleID
@@ -150,11 +151,16 @@ function M.checkJobStatus(modem, serverChannel, turtleID, timeout)
         local event, side, channel, replyChannel, message = os.pullEvent()
         
         if event == "timer" and side == timer then
+            print("DEBUG: Job status check timed out")
             return false, "Server timeout"
-        elseif event == "modem_message" and type(message) == "table" then
-            if message.type == "job_status_response" and message.turtle_id == turtleID then
-                os.cancelTimer(timer)
-                return message.job_active
+        elseif event == "modem_message" then
+            print("DEBUG: Received modem message: " .. textutils.serialize(message))
+            if type(message) == "table" then
+                if message.type == "job_status_response" and message.turtle_id == turtleID then
+                    print("DEBUG: Job active = " .. tostring(message.job_active))
+                    os.cancelTimer(timer)
+                    return message.job_active
+                end
             end
         end
     end
