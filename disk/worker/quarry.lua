@@ -4,11 +4,16 @@
 
 os.loadAPI("dig.lua")
 os.loadAPI("flex.lua")
-os.loadAPI("gps_nav.lua")
+
+-- Load modules
+local logger = require("modules.logger")
+local gpsUtils = require("modules.gps_utils")
+local gpsNav = require("modules.gps_navigation")
+local stateModule = require("modules.state")
+local communication = require("modules.communication")
+local resourceMgr = require("modules.resource_manager")
 
 -- Worker configuration
-local STATE_FILE = "quarry_state_" .. os.getComputerID() .. ".cfg"
-
 local config = {
     turtleID = os.getComputerID(),
     serverChannel = nil,
@@ -25,63 +30,32 @@ local config = {
     miningStarted = false
 }
 
--- Persistent logging function
-local logFile = "worker_" .. os.getComputerID() .. ".log"
-local function log(message)
-    -- Print to screen (use write/print directly, not log)
-    print(message)
-    
-    -- Append to log file
-    local file = fs.open(logFile, "a")
-    if file then
-        file.writeLine("[" .. os.date("%H:%M:%S") .. "] " .. tostring(message))
-        file.close()
-    end
-end
-
--- Clear old log on startup
-if fs.exists(logFile) then
-    fs.delete(logFile)
-end
-log("=== Worker Turtle Started ===")
+-- Initialize logger
+logger.init(config.turtleID)
+logger.section("Worker Turtle Started")
 
 -- Save state to disk
 local function saveState()
-    local file = fs.open(STATE_FILE, "w")
-    file.write(textutils.serialize({
-        config = config,
-        digLocation = dig.location(),
-        lastGPS = gps_nav.getPosition(),
-        lastCardinalDir = dig.getCardinalDir()
-    }))
-    file.close()
+    stateModule.save(config.turtleID, config, dig, gpsNav)
 end
 
 -- Load state from disk and verify job status with server
 local function loadState()
-    if not fs.exists(STATE_FILE) then
+    local savedState = stateModule.load(config.turtleID)
+    
+    if not savedState then
         return false
     end
     
-    local file = fs.open(STATE_FILE, "r")
-    local data = file.readAll()
-    file.close()
-    local state = textutils.unserialize(data)
+    config = savedState.config
     
-    if not state then
-        return false
-    end
-    
-    config = state.config
-    
-    -- If this is a coordinated worker with saved state, check if job is still active
+    -- If coordinated worker, check if job is still active
     if config.isCoordinated and config.zone and config.serverChannel then
-        log("Checking job status with server...")
+        logger.log("Checking job status with server...")
         
-        -- Find modem
         local modem = peripheral.find("modem")
         if not modem then
-            log("ERROR: No modem found")
+            logger.error("No modem found")
             return false
         end
         
@@ -89,122 +63,36 @@ local function loadState()
             modem.open(config.serverChannel)
         end
         
-        -- Ask server if job is still active
-        modem.transmit(config.serverChannel, config.serverChannel, {
-            type = "worker_status_check",
-            turtle_id = config.turtleID
-        })
-        
-        -- Wait for response
-        local timeout = os.startTimer(30)
-        local jobActive = false
-        
-        while true do
-            local event, side, channel, replyChannel, message = os.pullEvent()
-            
-            if event == "timer" and side == timeout then
-                log("Server timeout - treating as no active job")
-                break
-            elseif event == "modem_message" and type(message) == "table" then
-                if message.type == "job_status" and message.turtle_id == config.turtleID then
-                    jobActive = message.active
-                    log("Server reports job active: " .. tostring(jobActive))
-                    os.cancelTimer(timeout)
-                    break
-                end
-            end
-        end
+        -- Check job status
+        local jobActive = communication.checkJobStatus(modem, config.serverChannel, config.turtleID, 30)
         
         if jobActive then
-            -- Job is active, restore position and continue
-            log("Job is active - restoring state")
+            logger.log("Job is active - restoring state")
             
-            -- Re-initialize GPS navigation and calibrate current facing direction
-            if config.startGPS then
-                -- Always calibrate on restart to determine current facing direction
-                gps_nav.init(true)
-                log("GPS initialized and calibrated - preserved start position: " .. 
-                    config.startGPS.x .. "," .. config.startGPS.y .. "," .. config.startGPS.z)
-                log("Current facing direction: " .. tostring(dig.getCardinalDir()))
-            end
-            
-            -- Navigate to last GPS position first (handles turtle breakage/replacement)
-            if state.lastGPS then
-                log("Navigating to last GPS position: " .. textutils.serialize(state.lastGPS))
-                local navSuccess = gps_nav.goto(state.lastGPS.x, state.lastGPS.y, state.lastGPS.z)
-                if navSuccess then
-                    log("Successfully navigated to last position")
-                else
-                    log("Warning: Failed to navigate to last GPS position")
-                end
-                
-                -- Restore cardinal direction (turn to face the saved direction)
-                if state.lastCardinalDir then
-                    log("Turning to face saved direction: " .. state.lastCardinalDir)
-                    if gps_nav.faceDirection(state.lastCardinalDir) then
-                        log("Direction restored to: " .. state.lastCardinalDir)
-                    else
-                        log("Warning: Failed to turn to saved direction")
-                    end
-                else
-                    log("Warning: No cardinal direction saved in state")
-                end
-            else
-                log("Warning: No GPS position saved in state")
-            end
-            
-            -- Load dig.lua position (updates internal coordinate tracking without moving)
-            if state.digLocation then
-                log("Loading dig coordinate system: " .. textutils.serialize(state.digLocation))
-                local loc = state.digLocation
-                dig.setx(loc[1])
-                dig.sety(loc[2])
-                dig.setz(loc[3])
-                dig.setr(loc[4])
-                if loc[15] then dig.setlast(loc[15]) end
-                if loc[17] then dig.setBlocksProcessedTotal(loc[17]) end
+            -- Restore position and state
+            local success, err = stateModule.restore(savedState, dig, gpsNav, logger)
+            if not success then
+                logger.error("Failed to restore state: " .. tostring(err))
+                return false
             end
             
             return true
         else
-            -- No active job, clean up state
-            log("No active job - clearing saved state")
-            if fs.exists(STATE_FILE) then
-                fs.delete(STATE_FILE)
-            end
+            logger.log("No active job - clearing saved state")
+            stateModule.clear(config.turtleID)
             return false
         end
     end
     
-    -- Non-coordinated worker or missing info, just return state
     return true
 end
 
-local modem = peripheral.find("ender_modem")
+local modem, err = communication.initModem()
 if not modem then
-    modem = peripheral.find("modem")
+    error(err)
 end
 
-if not modem then
-    error("No modem found! Worker requires an ender modem.")
-end
-
-log("Worker Turtle ID: " .. config.turtleID)
-
--- GPS functions
-local function getGPS(retries)
-    retries = retries or 3
-    for i = 1, retries do
-        local x, y, z = gps.locate(5)
-        if x then
-            return {x = x, y = y, z = z}
-        end
-        sleep(0.5)
-    end
-    return nil
-end
-
--- Zone validation removed - GPS navigation inherently bounds movement to zone
+logger.log("Worker Turtle ID: " .. config.turtleID)
 
 -- Send status update to server
 local function sendStatusUpdate(status)
@@ -212,227 +100,32 @@ local function sendStatusUpdate(status)
         return
     end
     
-    -- Get GPS position if available
-    local gpsPos = gps_nav.getPosition()
+    local gpsPos = gpsNav.getPosition()
     
-    modem.transmit(config.serverChannel, config.serverChannel, {
-        type = "status_update",
-        turtle_id = config.turtleID,
-        status = status or "mining",
-        position = {
-            x = dig.getx(),
-            y = dig.gety(),
-            z = dig.getz()
-        },
-        gps_position = gpsPos,
-        fuel = turtle.getFuelLevel()
-    })
+    communication.sendStatusUpdate(modem, config.serverChannel, config.turtleID,
+        status or "mining",
+        {x = dig.getx(), y = dig.gety(), z = dig.getz()},
+        gpsPos,
+        turtle.getFuelLevel()
+    )
 end
 
--- Resource access functions
-local function requestResourceAccess(resourceType)
-    if not config.isCoordinated then
-        return true -- Not in coordinated mode
-    end
-    
-    log("Requesting " .. resourceType .. " access...")
-    
-    sendStatusUpdate("queued")
-    
-    -- Send request to server
-    modem.transmit(config.serverChannel, config.serverChannel, {
-        type = "resource_request",
-        turtle_id = config.turtleID,
-        resource = resourceType
-    })
-    
-    -- Wait for grant
-    local timeout = os.startTimer(300) -- 5 minute timeout
-    local granted = false
-    local chestPos = nil
-    local approachDir = nil
-    
-    while not granted do
-        local event, p1, p2, p3, p4, p5 = os.pullEvent()
-        
-        if event == "timer" and p1 == timeout then
-            log("Timeout waiting for " .. resourceType .. " access")
-            return false
-        elseif event == "modem_message" then
-            local side, channel, replyChannel, message, distance = p1, p2, p3, p4, p5
-            if type(message) == "table" then
-                if message.type == "resource_granted" and 
-                   message.turtle_id == config.turtleID and
-                   message.resource == resourceType then
-                    granted = true
-                    chestPos = message.chest_gps
-                    approachDir = message.approach_direction
-                    os.cancelTimer(timeout)
-                elseif message.type == "queue_position" and
-                       message.turtle_id == config.turtleID then
-                    log("Queue position: " .. message.position)
-                end
-            end
-        end
-    end
-    
-    return true, chestPos, approachDir
-end
-
-local function releaseResource(resourceType)
-    if not config.isCoordinated then
-        return
-    end
-    
-    modem.transmit(config.serverChannel, config.serverChannel, {
-        type = "resource_released",
-        turtle_id = config.turtleID,
-        resource = resourceType
-    })
-    
-    log("Released " .. resourceType .. " access")
-end
-
--- Coordinated resource operations
--- Optional returnPos parameter allows specifying a GPS position to return to after resource access
--- If nil, returns to the saved position (current position before accessing resource)
+-- Coordinated resource access wrapper
 local function queuedResourceAccess(resourceType, returnPos)
-    if not config.isCoordinated then
-        -- Fall back to normal operation
-        if resourceType == "output" then
-            dig.dropNotFuel()
-        elseif resourceType == "fuel" then
-            dig.refuel(1000)
-        end
-        return
-    end
-    
-    -- Save current position AND direction
-    local savedPos = gps_nav.getPosition()
-    local savedRotation = dig.getr()
-    local savedDirection = dig.getCardinalDir()
-    
-    -- Use custom return position if provided, otherwise use saved position
-    local targetReturnPos = returnPos or savedPos
-    
-    log("Saving position: " .. textutils.serialize(savedPos) .. 
-          " dig.lua rotation=" .. savedRotation .. 
-          " direction=" .. tostring(savedDirection))
-    
-    if returnPos then
-        log("Will return to custom position: " .. textutils.serialize(returnPos))
-    end
-    
-    -- Request access
-    local success, chestPos, approachDir = requestResourceAccess(resourceType)
-    if not success then
-        log("Failed to get " .. resourceType .. " access")
-        return
-    end
-    
-    log("Access granted, navigating to chest...")
-    
-    -- Navigate to position below the chest using GPS coordinates
-    -- Chests are accessed from one block below to use turtle.suckUp/dropUp
-    local chestGPS = config.chestGPS[resourceType]
-    if not chestGPS then
-        log("Error: Unknown resource type " .. resourceType)
-        releaseResource(resourceType)
-        return
-    end
-    
-    -- Navigate to position below the chest
-    gps_nav.goto(chestGPS.x, chestGPS.y - 1, chestGPS.z)
-    
-    -- Perform operation
-    if resourceType == "output" then
-        -- Output chest is above at Y=1, access from below at Y=0
-        turtle.select(1)
-        for slot = 1, 16 do
-            if slot ~= 1 and turtle.getItemCount(slot) > 0 then
-                turtle.select(slot)
-                turtle.dropUp()
-            end
-        end
-        turtle.select(1)
-        log("Inventory dumped")
-    elseif resourceType == "fuel" then
-        -- Fuel chest is above at Y=1, access from below at Y=0
-        turtle.select(1)
-        
-        -- Suck up fuel items
-        while turtle.suckUp() do
-            sleep(0.05)
-        end
-        
-        -- Refuel to maximum capacity, keeping 64 items in slot 1
-        local fuelLimit = turtle.getFuelLimit()
-        while turtle.getFuelLevel() < fuelLimit and turtle.getItemCount(1) > 64 do
-            turtle.refuel(1)
-        end
-        
-        -- If we're at max fuel but have less than 64 items, try to get more
-        if turtle.getItemCount(1) < 64 then
-            while turtle.suckUp() and turtle.getItemCount(1) < 64 do
-                sleep(0.05)
-            end
-        end
-        
-        log("Refueled to " .. turtle.getFuelLevel() .. "/" .. fuelLimit .. 
-              ", holding " .. turtle.getItemCount(1) .. " fuel items")
-    end
-    
-    log("Operation complete, returning to position...")
-    log("Target position: " .. textutils.serialize(targetReturnPos))
-    log("Current position before return: " .. textutils.serialize(gps_nav.getPosition()))
-    
-    -- Return to target position using GPS navigation
-    local returnSuccess = gps_nav.goto(targetReturnPos.x, targetReturnPos.y, targetReturnPos.z)
-    
-    if not returnSuccess then
-        log("ERROR: Failed to return to target position!")
-        log("Current position: " .. textutils.serialize(gps_nav.getPosition()))
-        log("Target was: " .. textutils.serialize(targetReturnPos))
-        -- Still try to restore direction
-    else
-        log("Successfully arrived at saved GPS position")
-    end
-    log("Current dig.lua rotation after navigation: " .. dig.getr())
-    
-    -- Restore the original facing direction
-    if savedDirection then
-        log("Restoring direction to: " .. savedDirection .. " (dig.lua rotation=" .. savedRotation .. ")")
-        
-        -- Use gps_nav to turn to face the saved cardinal direction
-        if gps_nav.faceDirection(savedDirection) then
-            -- Override dig.lua's rotation to the exact saved value
-            dig.setr(savedRotation)
-            log("Direction restored: dig.lua rotation=" .. dig.getr() .. " direction=" .. savedDirection)
-        else
-            log("Warning: Failed to restore direction, setting dig.lua rotation anyway")
-            dig.setr(savedRotation)
-        end
-    else
-        log("Warning: No saved direction, restoring dig.lua rotation only")
-        dig.setr(savedRotation)
-        log("dig.lua rotation set to: " .. dig.getr())
-    end
-    
-    -- Release resource
-    releaseResource(resourceType)
-    
-    -- Send status update after returning to mining
+    sendStatusUpdate("queued")
+    resourceMgr.accessResource(resourceType, returnPos, modem, config.serverChannel,
+        config.turtleID, config, dig, gpsNav, logger)
     sendStatusUpdate("mining")
 end
 
 -- Initialize worker - receive firmware and zone assignment
 local function initializeWorker()
-    log("\n=== Worker Initialization ===")
+    logger.section("Worker Initialization")
     
     -- Check if we're restarting from previous state
     -- loadState() handles job verification and position restoration
     if loadState() then
-        log("State restored - ready to continue mining")
+        logger.log("State restored - ready to continue mining")
         
         -- Send ready signal to server so it knows we're back online
         local modem = peripheral.find("modem")
@@ -444,12 +137,12 @@ local function initializeWorker()
         end
         
         -- Wait for start signal
-        log("Waiting for start signal...")
+        logger.log("Waiting for start signal...")
 
         while true do
         local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
         if type(message) == "table" and message.type == "start_mining" then
-            log("Start signal received!")
+            logger.log("Start signal received!")
             config.miningStarted = true
             saveState()
             sendStatusUpdate("mining")
@@ -460,8 +153,8 @@ local function initializeWorker()
         return -- Skip initialization, go straight to mining
     end
     
-    log("Starting fresh initialization...")
-    log("Waiting for zone assignment...")
+    logger.log("Starting fresh initialization...")
+    logger.log("Waiting for zone assignment...")
     
     modem.open(config.broadcastChannel)
     
@@ -479,22 +172,19 @@ local function initializeWorker()
     end
     
     modem.open(config.serverChannel)
-    log("Listening on server channel: " .. config.serverChannel)
+    logger.log("Listening on server channel: " .. config.serverChannel)
     
     -- Get GPS position and notify server we're ready for assignment
-    local currentGPS = getGPS(5)
+    local currentGPS = gpsUtils.getGPS(5)
     if not currentGPS then
         error("Failed to get GPS position for zone matching")
     end
     
-    log("Notifying server we're ready for assignment...")
-    modem.transmit(config.serverChannel, config.serverChannel, {
-        type = "ready_for_assignment",
-        turtle_id = config.turtleID,
-        gps_position = currentGPS
-    })
+    logger.log("Notifying server we're ready for assignment...")
+    communication.sendReadyForAssignment(modem, config.serverChannel, config.turtleID, currentGPS)
     
-    local initTimeout = os.startTimer(120) -- 2 minute timeout
+    -- Wait for zone assignment
+    local initTimeout = os.startTimer(120)
     local gotAssignment = false
     
     while not gotAssignment do
@@ -503,41 +193,41 @@ local function initializeWorker()
         if event == "timer" and p1 == initTimeout then
             error("Timeout waiting for zone assignment")
         elseif event == "modem_message" then
-            local side, channel, replyChannel, message, distance = p1, p2, p3, p4, p5
+            local side, channel, replyChannel, message = p1, p2, p3, p4
             if type(message) == "table" then
                 if message.type == "zone_assignment" and message.turtle_id == config.turtleID then
                     -- This zone assignment is for us!
-                    local currentGPS = getGPS(5)
-                    if not currentGPS then
-                        log("Warning: Could not verify GPS position")
-                        currentGPS = {x = 0, y = 0, z = 0} -- Use default if GPS fails
+                    local verifyGPS = gpsUtils.getGPS(5)
+                    if not verifyGPS then
+                        logger.warn("Could not verify GPS position")
+                        verifyGPS = {x = 0, y = 0, z = 0}
                     end
                     
                     config.zone = message.zone
                     config.gps_zone = message.gps_zone
                     config.chestGPS = message.chest_gps
                     config.isCoordinated = true
-                    config.startGPS = currentGPS
+                    config.startGPS = verifyGPS
                     
                     -- Set initial cardinal direction from server
                     if message.initial_direction then
                         dig.setCardinalDir(message.initial_direction)
-                        log("Initial direction set to: " .. message.initial_direction)
+                        logger.log("Initial direction set to: " .. message.initial_direction)
                     else
-                        log("Warning: No initial direction provided by server")
+                        logger.warn("No initial direction provided by server")
                     end
                     
                     -- Initialize GPS navigation
-                    gps_nav.init()
+                    gpsNav.init()
                     
                     -- Save initial state
                     saveState()
                     
-                    log("Zone assignment received!")
-                    log("Zone: X=" .. config.zone.xmin .. "-" .. config.zone.xmax)
-                    log("Chest positions (GPS coords):")
-                    log("  Output: (" .. config.chestGPS.output.x .. ", " .. config.chestGPS.output.y .. ", " .. config.chestGPS.output.z .. ")")
-                    log("  Fuel: (" .. config.chestGPS.fuel.x .. ", " .. config.chestGPS.fuel.y .. ", " .. config.chestGPS.fuel.z .. ")")
+                    logger.log("Zone assignment received!")
+                    logger.log("Zone: X=" .. config.zone.xmin .. "-" .. config.zone.xmax)
+                    logger.log("Chest positions (GPS coords):")
+                    logger.log("  Output: " .. gpsUtils.formatGPS(config.chestGPS.output))
+                    logger.log("  Fuel: " .. gpsUtils.formatGPS(config.chestGPS.fuel))
                     
                     gotAssignment = true
                     os.cancelTimer(initTimeout)
@@ -553,11 +243,9 @@ local function initializeWorker()
     end
     
     -- Wait for start signal
-    log("Waiting for start signal...")
-    while true do
-        local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
-        if type(message) == "table" and message.type == "start_mining" then
-            log("Start signal received!")
+    logger.log("Waiting for start signal...")
+    communication.waitForStartSignal(modem)
+    logger.log("Start signal received!")
             config.miningStarted = true
             saveState()
             sendStatusUpdate("mining")
@@ -575,81 +263,41 @@ local function checkInv()
     end
 end
 
--- Modified fuel check for coordinated mode
-local fuelThreshold = 1000 -- Will be calculated based on zone distance
+-- Fuel check for coordinated mode
+local fuelThreshold = 1000
 
 local function checkFuel()
     local current = turtle.getFuelLevel()
     
     if current < fuelThreshold then
-        -- First try to use reserve fuel in slot 1 (keep at least 1 item to reserve the slot)
         turtle.select(1)
         if turtle.getItemCount(1) > 1 and turtle.refuel(0) then
-            -- We have fuel items in slot 1, consume them to reach threshold (keeping 1 item)
-            log("Using reserve fuel from slot 1...")
+            logger.log("Using reserve fuel from slot 1...")
             while turtle.getFuelLevel() < fuelThreshold and turtle.getItemCount(1) > 1 do
                 turtle.refuel(1)
             end
-            log("Refueled from reserve to " .. turtle.getFuelLevel() .. ", " .. turtle.getItemCount(1) .. " items remain")
+            logger.log("Refueled from reserve to " .. turtle.getFuelLevel() .. 
+                ", " .. turtle.getItemCount(1) .. " items remain")
         end
         
-        -- If still below threshold after using reserve, go to chest
         if turtle.getFuelLevel() < fuelThreshold then
-            flex.send("Fuel low (" .. current .. "/" .. fuelThreshold .. "), requesting access...", colors.yellow)
+            flex.send("Fuel low (" .. current .. "/" .. fuelThreshold .. 
+                "), requesting access...", colors.yellow)
             queuedResourceAccess("fuel")
         end
     end
 end
 
--- Calculate fuel threshold based on maximum distance from fuel chest
-local function calculateFuelThreshold()
-    if not config.isCoordinated or not config.chestGPS.fuel or not config.gps_zone then
-        return 1000 -- Default fallback
-    end
-    
-    -- Calculate maximum possible distance from fuel chest to any corner of the zone
-    local fuelX = config.chestGPS.fuel.x
-    local fuelY = config.chestGPS.fuel.y
-    local fuelZ = config.chestGPS.fuel.z
-    
-    -- Check all corners of the zone and all Y levels
-    local maxDist = 0
-    local corners = {
-        {config.gps_zone.gps_xmin, config.gps_zone.gps_ymin, config.gps_zone.gps_zmin},
-        {config.gps_zone.gps_xmin, config.gps_zone.gps_ymin, config.gps_zone.gps_zmax},
-        {config.gps_zone.gps_xmax, config.gps_zone.gps_ymin, config.gps_zone.gps_zmin},
-        {config.gps_zone.gps_xmax, config.gps_zone.gps_ymin, config.gps_zone.gps_zmax},
-        {config.gps_zone.gps_xmin, config.gps_zone.gps_ymax, config.gps_zone.gps_zmin},
-        {config.gps_zone.gps_xmin, config.gps_zone.gps_ymax, config.gps_zone.gps_zmax},
-        {config.gps_zone.gps_xmax, config.gps_zone.gps_ymax, config.gps_zone.gps_zmin},
-        {config.gps_zone.gps_xmax, config.gps_zone.gps_ymax, config.gps_zone.gps_zmax}
-    }
-    
-    for _, corner in ipairs(corners) do
-        -- Manhattan distance (since turtle can't move diagonally)
-        local dist = math.abs(corner[1] - fuelX) + 
-                     math.abs(corner[2] - fuelY) + 
-                     math.abs(corner[3] - fuelZ)
-        if dist > maxDist then
-            maxDist = dist
-        end
-    end
-    
-    -- Only need fuel to reach chest (one-way) + safety margin, since we refuel before returning
-    local threshold = maxDist + 50
-    
-    log("Fuel threshold calculated: " .. threshold .. " (max distance to chest: " .. maxDist .. ")")
-    return threshold
-end
+
 
 -- Main execution
 initializeWorker()
 
 if config.isCoordinated then
     -- Calculate fuel threshold based on zone dimensions
-    fuelThreshold = calculateFuelThreshold()
+    fuelThreshold = resourceMgr.calculateFuelThreshold(config, logger)
     
-    -- Override dig functions to use GPS validation and queuing
+    -- Override dig functions to use queued resource access
     local oldDropNotFuel = dig.dropNotFuel
     dig.dropNotFuel = function()
         queuedResourceAccess("output")
@@ -662,13 +310,13 @@ if config.isCoordinated then
     dig.doAttack()
     
     -- Run quarry with zone constraints
-    log("\n=== Starting Zone Mining ===")
+    logger.section("Starting Zone Mining")
     local width = config.zone.xmax - config.zone.xmin + 1
     local length = config.zone.zmax - config.zone.zmin + 1
     local depth = math.abs(config.zone.ymin)
     local skip = config.zone.skip or 0
     
-    log("Zone dimensions: " .. width .. "x" .. length .. "x" .. depth)
+    logger.log("Zone dimensions: " .. width .. "x" .. length .. "x" .. depth)
     
     -- Set up periodic status updates and abort checking
     local lastStatusUpdate = os.clock()
@@ -711,7 +359,7 @@ if config.isCoordinated then
             local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
             if type(message) == "table" and message.type == "abort_mining" then
                 config.aborted = true
-                log("\n=== ABORT RECEIVED ===")
+                logger.section("ABORT RECEIVED")
                 break
             end
         end
@@ -760,20 +408,17 @@ if config.isCoordinated then
     
     -- Handle abort
     if not miningSuccess and config.aborted then
-        log("Abort received - dumping inventory and returning to start...")
+        logger.log("Abort received - dumping inventory and returning to start...")
         sendStatusUpdate("aborting")
         
-        -- Use queuedResourceAccess to dump inventory, returning to starting position instead of current position
+        -- Use queuedResourceAccess to dump inventory, returning to starting position
         queuedResourceAccess("output", config.startGPS)
         
         -- Send abort acknowledgment
-        modem.transmit(config.serverChannel, config.serverChannel, {
-            type = "abort_ack",
-            turtle_id = config.turtleID,
-            position = getGPS(3)
-        })
+        local gpsPos = gpsUtils.getGPS(3)
+        communication.sendAbortAck(modem, config.serverChannel, config.turtleID, gpsPos)
         
-        log("Abort complete - standing by")
+        logger.log("Abort complete - standing by")
         sendStatusUpdate("aborted")
         return
     elseif not miningSuccess then
@@ -782,30 +427,25 @@ if config.isCoordinated then
     
 else
     -- Run as standalone (not coordinated)
-    log("Running in standalone mode")
-    log("To use coordinated mode, deploy via orchestrate_deploy.lua")
+    logger.log("Running in standalone mode")
+    logger.log("To use coordinated mode, deploy via orchestrate_deploy.lua")
 end
 
 -- Completion sequence
 if config.isCoordinated then
-    log("\n=== Zone Mining Complete ===")
+    logger.section("Zone Mining Complete")
     
     -- Dump inventory and return to starting position in one operation
     queuedResourceAccess("output", config.startGPS)
     
     -- Send completion message
     sendStatusUpdate("complete")
-    modem.transmit(config.serverChannel, config.serverChannel, {
-        type = "zone_complete",
-        turtle_id = config.turtleID,
-        final_pos = getGPS(3)
-    })
+    local gpsPos = gpsUtils.getGPS(3)
+    communication.sendZoneComplete(modem, config.serverChannel, config.turtleID, gpsPos)
     
     -- Clean up state file since we're done
-    if fs.exists(STATE_FILE) then
-        fs.delete(STATE_FILE)
-    end
+    stateModule.clear(config.turtleID)
     
-    log("Completion reported to server")
-    log("Worker standing by...")
+    logger.log("Completion reported to server")
+    logger.log("Worker standing by...")
 end

@@ -38,6 +38,24 @@ local function checkVersion()
             fs.delete('orchestrate_server.lua')
             shell.run('wget', baseUrl .. 'orchestrate_server.lua', 'orchestrate_server.lua', '-f')
             
+            -- Download orchestrate modules
+            print("Downloading orchestrate modules...")
+            if not fs.exists('orchestrate') then
+                fs.makeDir('orchestrate')
+            end
+            
+            local orchestrateModules = {
+                'display.lua', 'state.lua', 'firmware.lua',
+                'resource_manager.lua', 'zone_manager.lua', 'message_handler.lua'
+            }
+            
+            for _, filename in ipairs(orchestrateModules) do
+                print("  Updating orchestrate/" .. filename .. "...")
+                local targetPath = 'orchestrate/' .. filename
+                fs.delete(targetPath)
+                shell.run('wget', baseUrl .. 'orchestrate/' .. filename, targetPath, '-f')
+            end
+            
             -- Update firmware disk if present
             local drive = peripheral.find('drive')
             if drive and drive.isDiskPresent() then
@@ -46,14 +64,31 @@ local function checkVersion()
                 if not fs.exists(mountPath .. '/worker') then
                     fs.makeDir(mountPath .. '/worker')
                 end
+                if not fs.exists(mountPath .. '/worker/modules') then
+                    fs.makeDir(mountPath .. '/worker/modules')
+                end
                 
-                local firmwareFiles = {'bootstrap.lua', 'quarry.lua', 'dig.lua', 'flex.lua', 'gps_nav.lua'}
+                -- Update main firmware files
+                local firmwareFiles = {'bootstrap.lua', 'quarry.lua', 'dig.lua', 'flex.lua'}
                 for _, filename in ipairs(firmwareFiles) do
                     print("  Updating " .. filename .. "...")
                     local targetPath = mountPath .. '/worker/' .. filename
                     fs.delete(targetPath)
                     shell.run('wget', baseUrl .. 'disk/worker/' .. filename, targetPath, '-f')
                 end
+                
+                -- Update worker modules
+                local moduleFiles = {
+                    'logger.lua', 'gps_utils.lua', 'gps_navigation.lua',
+                    'state.lua', 'communication.lua', 'resource_manager.lua', 'firmware.lua'
+                }
+                for _, filename in ipairs(moduleFiles) do
+                    print("  Updating modules/" .. filename .. "...")
+                    local targetPath = mountPath .. '/worker/modules/' .. filename
+                    fs.delete(targetPath)
+                    shell.run('wget', baseUrl .. 'disk/worker/modules/' .. filename, targetPath, '-f')
+                end
+                
                 print("Firmware disk updated!")
             end
             
@@ -67,6 +102,24 @@ local function checkVersion()
             shell.run('wget', baseUrl .. 'flex.lua', 'flex.lua', '-f')
             fs.delete('bootstrap.lua')
             shell.run('wget', baseUrl .. 'disk/worker/bootstrap.lua', 'bootstrap.lua', '-f')
+            
+            -- Download deploy modules
+            print("Downloading deploy modules...")
+            if not fs.exists('deploy') then
+                fs.makeDir('deploy')
+            end
+            
+            local deployModules = {
+                'state.lua', 'positioning.lua', 'worker_deployment.lua',
+                'chest_manager.lua', 'communication.lua'
+            }
+            
+            for _, filename in ipairs(deployModules) do
+                print("  Updating deploy/" .. filename .. "...")
+                local targetPath = 'deploy/' .. filename
+                fs.delete(targetPath)
+                shell.run('wget', baseUrl .. 'deploy/' .. filename, targetPath, '-f')
+            end
         end
         
         -- Save new version

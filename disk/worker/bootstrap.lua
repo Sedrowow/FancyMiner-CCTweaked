@@ -1,172 +1,63 @@
 -- Bootstrap loader for worker turtles
 -- This minimal program receives firmware from deployer and starts the worker
 
-local BROADCAST_CHANNEL = 65535
-local SERVER_CHANNEL = nil
+-- Load modules
+local logger = require("modules.logger")
+local communication = require("modules.communication")
+local gpsUtils = require("modules.gps_utils")
+local firmware = require("modules.firmware")
+
 local turtleID = os.getComputerID()
 
-print("Worker Bootstrap - ID: " .. turtleID)
+-- Initialize logger
+logger.init(turtleID)
+logger.section("Worker Bootstrap")
+logger.log("Worker ID: " .. turtleID)
 
--- Find and open modem
-local modem = peripheral.find("ender_modem")
+-- Initialize modem
+local modem, err = communication.initModem()
 if not modem then
-    modem = peripheral.find("modem")
+    error(err)
 end
 
-if not modem then
-    error("No modem found!")
+-- Broadcast online status and wait for server response
+logger.log("Broadcasting online status...")
+local SERVER_CHANNEL, err = communication.waitForServerResponse(modem, turtleID, 60)
+if not SERVER_CHANNEL then
+    error(err or "Failed to discover server")
 end
 
-modem.open(BROADCAST_CHANNEL)
+logger.log("Server connected: Channel " .. SERVER_CHANNEL)
 
--- Broadcast that we're online and wait for server response
-print("Broadcasting online status...")
-local serverDiscovered = false
-local broadcastTimer = os.startTimer(2) -- Broadcast every 2 seconds
-
-while not serverDiscovered do
-    -- Broadcast we're online
-    modem.transmit(BROADCAST_CHANNEL, BROADCAST_CHANNEL, {
-        type = "worker_online",
-        turtle_id = turtleID
-    })
-    
-    local event, p1, p2, p3, p4 = os.pullEvent()
-    
-    if event == "timer" and p1 == broadcastTimer then
-        -- Re-broadcast
-        broadcastTimer = os.startTimer(2)
-    elseif event == "modem_message" then
-        local side, channel, replyChannel, message, distance = p1, p2, p3, p4, p5
-        
-        if type(message) == "table" and message.type == "server_response" then
-            if message.turtle_id == turtleID then
-                SERVER_CHANNEL = message.server_channel
-                serverDiscovered = true
-                os.cancelTimer(broadcastTimer)
-                print("Server connected: Channel " .. SERVER_CHANNEL)
-                
-                -- Save server channel for quarry.lua to use
-                local file = fs.open("server_channel.txt", "w")
-                file.writeLine(tostring(SERVER_CHANNEL))
-                file.close()
-            end
-        end
-    end
+-- Save server channel for quarry.lua
+local success, err = communication.saveServerChannelFile(SERVER_CHANNEL)
+if not success then
+    logger.error(err or "Failed to save server channel")
 end
 
--- Open server channel for firmware reception
-modem.open(SERVER_CHANNEL)
-print("Waiting for firmware...")
+-- Receive firmware files
+firmware.receiveFirmware(modem, SERVER_CHANNEL, turtleID, 
+    {"quarry.lua", "dig.lua", "flex.lua"}, logger)
 
--- File reception state
-local fileChunks = {}
-local filesReceived = {}
-local requiredFiles = {"quarry.lua", "dig.lua", "flex.lua", "gps_nav.lua"}
-local allFilesReceived = false
-
--- Function to check if all files are received
-local function checkAllFilesReceived()
-    for _, filename in ipairs(requiredFiles) do
-        if not filesReceived[filename] then
-            return false
-        end
-    end
-    return true
+-- Get GPS position for zone matching
+logger.log("Getting GPS position...")
+local gpsPosition, err = gpsUtils.getGPS(5)
+if not gpsPosition then
+    error(err or "Failed to get GPS coordinates")
 end
 
--- Main reception loop
-print("Waiting for firmware...")
-while not allFilesReceived do
-    local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
-    
-    if type(message) == "table" then
-        if message.type == "file_chunk" then
-            local filename = message.filename
-            
-            -- Only process files we need
-            local isRequired = false
-            for _, req in ipairs(requiredFiles) do
-                if req == filename then
-                    isRequired = true
-                    break
-                end
-            end
-            
-            if isRequired then
-                if not fileChunks[filename] then
-                    fileChunks[filename] = {}
-                    print("Receiving " .. filename .. "...")
-                end
-                
-                fileChunks[filename][message.chunk_num] = message.data
-                
-                -- Check if file is complete
-                local complete = true
-                for i = 1, message.total_chunks do
-                    if not fileChunks[filename][i] then
-                        complete = false
-                        break
-                    end
-                end
-                
-                if complete and not filesReceived[filename] then
-                    -- Reassemble and write file
-                    local content = table.concat(fileChunks[filename])
-                    local file = fs.open(filename, "w")
-                    file.write(content)
-                    file.close()
-                    
-                    filesReceived[filename] = true
-                    print("Received: " .. filename .. " (" .. #content .. " bytes)")
-                    
-                    -- Acknowledge receipt to server
-                    modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
-                        type = "file_received",
-                        turtle_id = turtleID,
-                        filename = filename
-                    })
-                    
-                    -- Check if all files received
-                    allFilesReceived = checkAllFilesReceived()
-                    
-                    if allFilesReceived then
-                        print("\nAll firmware received!")
-                        
-                        -- Get GPS position for zone matching
-                        print("Getting GPS position...")
-                        local gpsX, gpsY, gpsZ = gps.locate(5)
-                        
-                        if not gpsX then
-                            error("Failed to get GPS coordinates")
-                        end
-                        
-                        print("Position: " .. gpsX .. ", " .. gpsY .. ", " .. gpsZ)
-                        
-                        -- Notify server with GPS position
-                        modem.transmit(SERVER_CHANNEL, SERVER_CHANNEL, {
-                            type = "firmware_complete",
-                            turtle_id = turtleID,
-                            gps_position = {x = gpsX, y = gpsY, z = gpsZ}
-                        })
-                        
-                        break
-                    end
-                end
-            end
-        end
-    end
-end
+logger.log("Position: " .. gpsUtils.formatGPS(gpsPosition))
+
+-- Notify server with GPS position
+communication.sendFirmwareComplete(modem, SERVER_CHANNEL, turtleID, gpsPosition)
 
 -- Load the APIs
-print("\nLoading APIs...")
+logger.section("Loading APIs")
 os.loadAPI("dig.lua")
 os.loadAPI("flex.lua")
-os.loadAPI("gps_nav.lua")
 
 -- Execute the worker quarry program
-print("Starting worker quarry program...")
+logger.log("Starting worker quarry program...")
 sleep(1)
 
--- Run quarry.lua
 shell.run("quarry.lua")

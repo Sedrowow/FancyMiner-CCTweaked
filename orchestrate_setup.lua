@@ -98,6 +98,32 @@ local function setupDeploymentTurtle()
         end
     end
     
+    -- Download deploy modules
+    print()
+    print("Downloading deploy modules...")
+    
+    if not fs.exists("deploy") then
+        fs.makeDir("deploy")
+    end
+    
+    local deployModules = {
+        "state.lua", "positioning.lua", "worker_deployment.lua",
+        "chest_manager.lua", "communication.lua"
+    }
+    
+    local moduleBaseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/deploy/"
+    
+    for _, filename in ipairs(deployModules) do
+        print("Downloading deploy/" .. filename .. "...")
+        local targetPath = "deploy/" .. filename
+        fs.delete(targetPath)
+        local moduleSuccess = shell.run("wget", moduleBaseUrl .. filename, targetPath, "-f")
+        if not moduleSuccess then
+            print("ERROR: Failed to download module " .. filename)
+            return false
+        end
+    end
+    
     print()
     print("Downloading auto-update script...")
     local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/"
@@ -177,6 +203,32 @@ local function setupOrchestrationServer()
         print()
         print("ERROR: Failed to download server program.")
         return false
+    end
+    
+    -- Download orchestrate modules
+    print()
+    print("Downloading orchestrate modules...")
+    
+    if not fs.exists("orchestrate") then
+        fs.makeDir("orchestrate")
+    end
+    
+    local orchestrateModules = {
+        "display.lua", "state.lua", "firmware.lua",
+        "resource_manager.lua", "zone_manager.lua", "message_handler.lua"
+    }
+    
+    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/orchestrate/"
+    
+    for _, filename in ipairs(orchestrateModules) do
+        print("Downloading orchestrate/" .. filename .. "...")
+        local targetPath = "orchestrate/" .. filename
+        fs.delete(targetPath)
+        local moduleSuccess = shell.run("wget", baseUrl .. filename, targetPath, "-f")
+        if not moduleSuccess then
+            print("ERROR: Failed to download module " .. filename)
+            return false
+        end
     end
     
     print()
@@ -274,11 +326,14 @@ local function setupFirmwareDisk()
     if not fs.exists(mountPath .. "/worker") then
         fs.makeDir(mountPath .. "/worker")
     end
+    if not fs.exists(mountPath .. "/worker/modules") then
+        fs.makeDir(mountPath .. "/worker/modules")
+    end
     
     print("Downloading firmware files...")
     
     local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/disk/worker/"
-    local files = {"bootstrap.lua", "quarry.lua", "dig.lua", "flex.lua", "gps_nav.lua"}
+    local files = {"bootstrap.lua", "quarry.lua", "dig.lua", "flex.lua"}
     
     for _, filename in ipairs(files) do
         print("Downloading " .. filename .. "...")
@@ -287,6 +342,24 @@ local function setupFirmwareDisk()
         local success = shell.run("wget", baseUrl .. filename, targetPath, "-f")
         if not success then
             print("ERROR: Failed to download " .. filename)
+            return false
+        end
+    end
+    
+    -- Download modules
+    print("Downloading worker modules...")
+    local moduleFiles = {
+        "logger.lua", "gps_utils.lua", "gps_navigation.lua",
+        "state.lua", "communication.lua", "resource_manager.lua", "firmware.lua"
+    }
+    
+    for _, filename in ipairs(moduleFiles) do
+        print("Downloading modules/" .. filename .. "...")
+        local targetPath = mountPath .. "/worker/modules/" .. filename
+        fs.delete(targetPath)
+        local success = shell.run("wget", baseUrl .. "modules/" .. filename, targetPath, "-f")
+        if not success then
+            print("ERROR: Failed to download module " .. filename)
             return false
         end
     end

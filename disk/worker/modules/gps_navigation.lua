@@ -1,44 +1,33 @@
--- GPS-based Navigation API
--- Provides simple navigation functions using absolute GPS coordinates
--- Uses dig.lua for all movement and direction tracking
+-- GPS Navigation Module
+-- Consolidated GPS-based navigation using dig.lua for movement
+-- Combines gps_nav.lua functionality with gps_utils helpers
 
 os.loadAPI("dig.lua")
+
+local gpsUtils = require("modules.gps_utils")
+
+local M = {}
 
 local startGPS = nil
 local currentGPS = nil
 
--- Get GPS position with retries
-local function getGPS(retries)
-    retries = retries or 3
-    for i = 1, retries do
-        local x, y, z = gps.locate(5)
-        if x then
-            return {x = x, y = y, z = z}
-        end
-        sleep(0.5)
-    end
-    return nil
-end
-
 -- Determine current cardinal direction by moving and checking GPS
 local function calibrateDirection()
-    local pos1 = getGPS(5)
+    local pos1 = gpsUtils.getGPS(5)
     if not pos1 then
         return nil
     end
     
     -- Try to move forward
     if not turtle.forward() then
-        -- If blocked, try to dig and move
         turtle.dig()
         if not turtle.forward() then
-            return nil -- Can't determine direction if can't move
+            return nil
         end
     end
     
-    local pos2 = getGPS(5)
+    local pos2 = gpsUtils.getGPS(5)
     if not pos2 then
-        -- Move back and fail
         turtle.back()
         return nil
     end
@@ -54,22 +43,19 @@ local function calibrateDirection()
         direction = (deltaZ > 0) and "south" or "north"
     end
     
-    -- Move back to original position
     turtle.back()
-    
     return direction
 end
 
 -- Initialize the GPS navigation system
--- If calibrate is true, will determine current facing direction
-function init(calibrate)
-    startGPS = getGPS(5)
+function M.init(calibrate)
+    startGPS = gpsUtils.getGPS(5)
     if not startGPS then
         error("Failed to initialize GPS navigation - could not get GPS position")
     end
-    currentGPS = {x = startGPS.x, y = startGPS.y, z = startGPS.z}
+    currentGPS = gpsUtils.copy(startGPS)
     
-    -- If requested and cardinal direction not set, calibrate it
+    -- Calibrate direction if requested and not already set
     if calibrate and not dig.getCardinalDir() then
         local direction = calibrateDirection()
         if direction then
@@ -84,8 +70,8 @@ function init(calibrate)
 end
 
 -- Update current position from GPS
-function updatePosition()
-    local gps = getGPS(3)
+function M.updatePosition()
+    local gps = gpsUtils.getGPS(3)
     if gps then
         currentGPS = gps
     end
@@ -93,23 +79,23 @@ function updatePosition()
 end
 
 -- Get current GPS position
-function getPosition()
-    updatePosition()
-    return {x = currentGPS.x, y = currentGPS.y, z = currentGPS.z}
+function M.getPosition()
+    M.updatePosition()
+    return gpsUtils.copy(currentGPS)
 end
 
 -- Get starting GPS position
-function getStart()
-    return startGPS
+function M.getStart()
+    return gpsUtils.copy(startGPS)
 end
 
--- Get the current GPS cardinal direction from dig.lua
-function getCurrentDirection()
+-- Get current cardinal direction
+function M.getCurrentDirection()
     return dig.getCardinalDir()
 end
 
--- Movement functions using dig.lua's existing functions
-function up()
+-- Movement functions using dig.lua
+function M.up()
     if dig.up() then
         currentGPS.y = currentGPS.y + 1
         return true
@@ -117,7 +103,7 @@ function up()
     return false
 end
 
-function down()
+function M.down()
     if dig.down() then
         currentGPS.y = currentGPS.y - 1
         return true
@@ -148,7 +134,7 @@ local function calculateTurns(currentDir, targetDir)
     end
 end
 
--- Turn to face a direction using dig.lua
+-- Turn to face a direction
 local function turnToFace(currentFacing, targetFacing)
     local turns = calculateTurns(currentFacing, targetFacing)
     
@@ -162,14 +148,14 @@ local function turnToFace(currentFacing, targetFacing)
 end
 
 -- Navigate to a GPS position
-function goto(targetX, targetY, targetZ)
+function M.goto(targetX, targetY, targetZ)
     if not targetX or not targetY or not targetZ then
         error("Invalid target coordinates")
     end
     
     print("GPS NAV: Going to (" .. targetX .. ", " .. targetY .. ", " .. targetZ .. ")")
     
-    -- Get current facing from dig.lua (should be set by orchestration server)
+    -- Get current facing
     local facing = dig.getCardinalDir()
     if not facing then
         print("GPS NAV: Warning - Cardinal direction not set!")
@@ -178,14 +164,14 @@ function goto(targetX, targetY, targetZ)
     
     -- Navigate Y first
     while currentGPS.y < targetY do
-        if not up() then
+        if not M.up() then
             print("GPS NAV: Blocked going up")
             return false
         end
     end
     
     while currentGPS.y > targetY do
-        if not down() then
+        if not M.down() then
             print("GPS NAV: Blocked going down")
             return false
         end
@@ -196,7 +182,7 @@ function goto(targetX, targetY, targetZ)
     local attempts = 0
     
     while attempts < maxAttempts do
-        local gps = getGPS(5)
+        local gps = gpsUtils.getGPS(5)
         if not gps then
             print("GPS NAV: GPS unavailable")
             return false
@@ -238,7 +224,7 @@ function goto(targetX, targetY, targetZ)
 end
 
 -- Face a cardinal direction
-function faceDirection(direction)
+function M.faceDirection(direction)
     local currentFacing = dig.getCardinalDir()
     if not currentFacing then
         print("GPS NAV: Cardinal direction not set!")
@@ -254,9 +240,11 @@ function faceDirection(direction)
 end
 
 -- Return to starting position
-function returnHome()
+function M.returnHome()
     if not startGPS then
         error("GPS navigation not initialized")
     end
-    return goto(startGPS.x, startGPS.y, startGPS.z)
+    return M.goto(startGPS.x, startGPS.y, startGPS.z)
 end
+
+return M
