@@ -20,7 +20,14 @@ function Firmware.checkDisk()
     local requiredFiles = {
         diskPath .. "/worker/quarry.lua",
         diskPath .. "/worker/dig.lua",
-        diskPath .. "/worker/flex.lua"
+        diskPath .. "/worker/flex.lua",
+        diskPath .. "/worker/modules/logger.lua",
+        diskPath .. "/worker/modules/gps_utils.lua",
+        diskPath .. "/worker/modules/gps_navigation.lua",
+        diskPath .. "/worker/modules/state.lua",
+        diskPath .. "/worker/modules/communication.lua",
+        diskPath .. "/worker/modules/resource_manager.lua",
+        diskPath .. "/worker/modules/firmware.lua"
     }
     
     for _, file in ipairs(requiredFiles) do
@@ -44,6 +51,22 @@ function Firmware.readDiskFile(diskPath, filename)
     return content, nil
 end
 
+-- Get all firmware files to send
+function Firmware.getFirmwareFiles()
+    return {
+        "quarry.lua",
+        "dig.lua",
+        "flex.lua",
+        "modules/logger.lua",
+        "modules/gps_utils.lua",
+        "modules/gps_navigation.lua",
+        "modules/state.lua",
+        "modules/communication.lua",
+        "modules/resource_manager.lua",
+        "modules/firmware.lua"
+    }
+end
+
 -- Split content into chunks for transmission
 function Firmware.createChunks(content)
     local chunks = {}
@@ -65,7 +88,7 @@ function Firmware.sendToWorker(modem, serverChannel, turtleID)
     
     print("Sending firmware to turtle " .. turtleID .. "...")
     
-    local files = {"quarry.lua", "dig.lua", "flex.lua"}
+    local files = Firmware.getFirmwareFiles()
     for _, filename in ipairs(files) do
         print("  Sending " .. filename .. "...")
         local content, readErr = Firmware.readDiskFile(diskPath, filename)

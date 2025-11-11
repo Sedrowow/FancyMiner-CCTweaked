@@ -17,6 +17,11 @@ end
 function M.receiveFirmware(modem, serverChannel, turtleID, requiredFiles, logger)
     requiredFiles = requiredFiles or {"quarry.lua", "dig.lua", "flex.lua"}
     
+    -- Create modules directory if needed
+    if not fs.exists("modules") then
+        fs.makeDir("modules")
+    end
+    
     local fileChunks = {}
     local filesReceived = {}
     
@@ -57,6 +62,13 @@ function M.receiveFirmware(modem, serverChannel, turtleID, requiredFiles, logger
                 if complete and not filesReceived[filename] then
                     -- Reassemble and write file
                     local content = table.concat(fileChunks[filename])
+                    
+                    -- Ensure directory exists for files with paths
+                    local dir = fs.getDir(filename)
+                    if dir and dir ~= "" and not fs.exists(dir) then
+                        fs.makeDir(dir)
+                    end
+                    
                     local file = fs.open(filename, "w")
                     file.write(content)
                     file.close()
