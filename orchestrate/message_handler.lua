@@ -94,23 +94,6 @@ local function handleWorkerOnline(modem, serverChannel, broadcastChannel, state,
         })
         
         state.firmwareRequests[turtleID] = currentTime
-        
-        -- Track firmware transfer state
-        if not state.firmwareTransfers then
-            state.firmwareTransfers = {}
-        end
-        
-        state.firmwareTransfers[turtleID] = {
-            startTime = currentTime,
-            attempts = (state.firmwareTransfers[turtleID] and state.firmwareTransfers[turtleID].attempts or 0) + 1,
-            complete = false
-        }
-        
-        sleep(1.5)
-        Firmware.sendToWorker(modem, serverChannel, turtleID)
-        
-        -- Start timer for firmware completion check
-        state.firmwareTransfers[turtleID].checkTimer = os.startTimer(30)
     end
     
     return false -- No state save needed yet
@@ -139,6 +122,32 @@ local function handleVersionCheck(modem, serverChannel, state, message)
         server_version = serverVersion,
         up_to_date = upToDate
     })
+    
+    -- If update needed, send firmware
+    if not upToDate then
+        print("Starting firmware transfer to turtle " .. turtleID .. "...")
+        
+        local currentTime = os.clock()
+        
+        -- Track firmware transfer state
+        if not state.firmwareTransfers then
+            state.firmwareTransfers = {}
+        end
+        
+        state.firmwareTransfers[turtleID] = {
+            startTime = currentTime,
+            attempts = (state.firmwareTransfers[turtleID] and state.firmwareTransfers[turtleID].attempts or 0) + 1,
+            complete = false
+        }
+        
+        sleep(0.5)
+        Firmware.sendToWorker(modem, serverChannel, turtleID)
+        
+        -- Start timer for firmware completion check
+        state.firmwareTransfers[turtleID].checkTimer = os.startTimer(30)
+    else
+        print("Worker " .. turtleID .. " firmware is up-to-date, skipping transfer")
+    end
     
     return false
 end
