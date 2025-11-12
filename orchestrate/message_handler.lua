@@ -400,14 +400,78 @@ local function handleWorkerStatusCheckDetailed(modem, serverChannel, state, mess
     
     local lastState = nil
     if jobActive and state.workers[turtleID] then
-        -- Include last known state for this worker
+        -- Create clean copies of nested tables to avoid circular references
+        local worker = state.workers[turtleID]
+        
+        -- Copy zone data
+        local zoneCopy = nil
+        if worker.zone then
+            zoneCopy = {
+                xmin = worker.zone.xmin,
+                xmax = worker.zone.xmax,
+                ymin = worker.zone.ymin,
+                zmin = worker.zone.zmin,
+                zmax = worker.zone.zmax,
+                skip = worker.zone.skip
+            }
+        end
+        
+        -- Copy gps_zone data
+        local gpsZoneCopy = nil
+        if worker.gps_zone then
+            gpsZoneCopy = {
+                gps_xmin = worker.gps_zone.gps_xmin,
+                gps_xmax = worker.gps_zone.gps_xmax,
+                gps_ymin = worker.gps_zone.gps_ymin,
+                gps_zmin = worker.gps_zone.gps_zmin,
+                gps_zmax = worker.gps_zone.gps_zmax,
+                initial_direction = worker.gps_zone.initial_direction
+            }
+        end
+        
+        -- Copy chest positions
+        local chestCopy = nil
+        if state.chestPositions then
+            chestCopy = {
+                fuel = state.chestPositions.fuel and {
+                    x = state.chestPositions.fuel.x,
+                    y = state.chestPositions.fuel.y,
+                    z = state.chestPositions.fuel.z
+                } or nil,
+                output = state.chestPositions.output and {
+                    x = state.chestPositions.output.x,
+                    y = state.chestPositions.output.y,
+                    z = state.chestPositions.output.z
+                } or nil
+            }
+        end
+        
+        -- Copy GPS position
+        local gpsCopy = nil
+        if worker.gps_position then
+            gpsCopy = {
+                x = worker.gps_position.x,
+                y = worker.gps_position.y,
+                z = worker.gps_position.z
+            }
+        end
+        
+        -- Copy dig location array
+        local digLocationCopy = nil
+        if worker.position then
+            digLocationCopy = {}
+            for i = 1, #worker.position do
+                digLocationCopy[i] = worker.position[i]
+            end
+        end
+        
         lastState = {
-            zone = state.workers[turtleID].zone,
-            gps_zone = state.workers[turtleID].gps_zone,
-            chestGPS = state.chestPositions,
-            startGPS = state.workers[turtleID].gps_position,
-            lastGPS = state.workers[turtleID].gps_position,
-            digLocation = state.workers[turtleID].position
+            zone = zoneCopy,
+            gps_zone = gpsZoneCopy,
+            chestGPS = chestCopy,
+            startGPS = gpsCopy,
+            lastGPS = gpsCopy,
+            digLocation = digLocationCopy
         }
     end
     
