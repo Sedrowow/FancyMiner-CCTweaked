@@ -137,7 +137,7 @@ end
 
 -- Check job status with server
 function M.checkJobStatus(modem, serverChannel, turtleID, timeout)
-    timeout = timeout or 30
+    timeout = timeout or 60
     
     print("DEBUG: Sending status check on channel " .. serverChannel .. " for turtle " .. turtleID)
     M.sendMessage(modem, serverChannel, {
@@ -152,6 +152,7 @@ function M.checkJobStatus(modem, serverChannel, turtleID, timeout)
         
         if event == "timer" and side == timer then
             print("DEBUG: Job status check timed out")
+            sleep(20)
             return false, "Server timeout"
         elseif event == "modem_message" then
             print("DEBUG: Received modem message: " .. textutils.serialize(message))

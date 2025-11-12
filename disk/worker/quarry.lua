@@ -59,9 +59,7 @@ local function loadState()
             return false
         end
         
-        if not modem.isOpen(config.serverChannel) then
-            modem.open(config.serverChannel)
-        end
+        communication.initModem(config.serverChannel)
         
         -- Check job status
         local jobActive = communication.checkJobStatus(modem, config.serverChannel, config.turtleID, 30)
