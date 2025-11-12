@@ -186,13 +186,16 @@ function M.checkJobStatusDetailed(modem, serverChannel, turtleID, timeout)
             print("DEBUG: Detailed job status check timed out")
             return nil
         elseif event == "modem_message" then
-            print("DEBUG: Received modem message: " .. textutils.serialize(message))
+            -- Safe debug logging without serializing complex nested tables
             if type(message) == "table" then
+                print("DEBUG: Received message type: " .. tostring(message.type))
                 if message.type == "job_status_response_detailed" and message.turtle_id == turtleID then
                     print("DEBUG: Job active = " .. tostring(message.job_active))
                     os.cancelTimer(timer)
                     return message
                 end
+            else
+                print("DEBUG: Received non-table message")
             end
         end
     end
