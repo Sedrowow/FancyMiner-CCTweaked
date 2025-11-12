@@ -119,31 +119,6 @@ local function restoreDigCoordinates(digLocation, digAPI, logger, resetRotation)
     return true
 end
 
--- Restore worker position and state from saved data
-function M.restore(savedState, digAPI, gpsNavAPI, logger)
-    if not savedState then
-        return false, "No saved state provided"
-    end
-    
-    -- Re-initialize GPS navigation and calibrate current facing direction
-    if savedState.config and savedState.config.startGPS then
-        gpsNavAPI.init(true)
-        logger.log("GPS initialized and calibrated - preserved start position: " .. 
-            savedState.config.startGPS.x .. "," .. 
-            savedState.config.startGPS.y .. "," .. 
-            savedState.config.startGPS.z)
-        logger.log("Current facing direction: " .. tostring(digAPI.getCardinalDir()))
-    end
-    
-    -- Navigate to last GPS position and restore direction
-    navigateAndRestoreDirection(savedState.lastGPS, savedState.lastCardinalDir, gpsNavAPI, digAPI, logger)
-    
-    -- Restore dig coordinates
-    restoreDigCoordinates(savedState.digLocation, digAPI, logger, false)
-    
-    return true
-end
-
 -- Internal helper to restore state with fallback support
 local function restoreStateWithFallback(savedState, digAPI, gpsNavAPI, logger, fallbackDir)
     -- Re-initialize GPS navigation
