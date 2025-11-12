@@ -765,12 +765,12 @@ function up(n)
         
         if retries >= 3 then
           -- Deadlock detected, both turtles move left to pass each other
-          turnl()
+          left()
           if fwd() then
             sleep(math.random(5, 15) / 10)  -- Random 0.5-1.5s delay to desync
             back()
           end
-          turnr()
+          right()
         end
         x = x - 1  -- Retry this iteration
       else
@@ -829,12 +829,12 @@ function down(n)
         
         if retries >= 3 then
           -- Deadlock detected, both turtles move left to pass each other
-          turnl()
+          left()
           if fwd() then
             sleep(math.random(5, 15) / 10)  -- Random 0.5-1.5s delay to desync
             back()
           end
-          turnr()
+          right()
         end
         x = x - 1  -- Retry this iteration
       else
@@ -893,12 +893,12 @@ function fwd(n)
         
         if retries >= 3 then
           -- Deadlock detected, both turtles move left to pass each other
-          turnl()
+          left()
           if fwd() then
             sleep(math.random(5, 15) / 10)  -- Random 0.5-1.5s delay to desync
             back()
           end
-          turnr()
+          right()
         end
         x = x - 1  -- Retry this iteration
       else
