@@ -39,55 +39,54 @@ local function saveState()
     stateModule.save(config.turtleID, config, dig, gpsNav)
 end
 
--- Load state from disk and verify job status with server
-local function loadState()
-    local savedState = stateModule.load(config.turtleID)
-    
-    if not savedState then
-        return false
-    end
-    
-    config = savedState.config
-    
-    -- If coordinated worker, check if job is still active
-    if config.isCoordinated and config.zone and config.serverChannel then
-        logger.log("Checking job status with server...")
-        
-        local modem = peripheral.find("modem")
-        if not modem then
-            logger.error("No modem found")
-            return false
-        end
-        
-        communication.initModem(config.serverChannel)
-        
-        -- Check job status
-        local jobActive = communication.checkJobStatus(modem, config.serverChannel, config.turtleID, 30)
-        
-        if jobActive then
-            logger.log("Job is active - restoring state")
-            
-            -- Restore position and state
-            local success, err = stateModule.restore(savedState, dig, gpsNav, logger)
-            if not success then
-                logger.error("Failed to restore state: " .. tostring(err))
-                return false
-            end
-            
-            return true
-        else
-            logger.log("No active job - clearing saved state")
-            stateModule.clear(config.turtleID)
-            return false
-        end
-    end
-    
-    return true
-end
-
+-- Initialize modem early so it's available for all operations
 local modem, err = communication.initModem()
 if not modem then
     error(err)
+end
+
+-- Try to resume from saved state or server state
+local function tryResumeJob()
+    -- First try local state file
+    local savedState = stateModule.load(config.turtleID)
+    
+    if savedState then
+        config = savedState.config
+        
+        -- If coordinated worker, check if job is still active
+        if config.isCoordinated and config.zone and config.serverChannel then
+            logger.log("Checking job status with server...")
+            
+            -- Check job status
+            local jobActive = communication.checkJobStatus(modem, config.serverChannel, config.turtleID, 30)
+            
+            if jobActive then
+                logger.log("Job is active - restoring from local state")
+                
+                -- Restore position and state
+                local success, err = stateModule.restore(savedState, dig, gpsNav, logger)
+                if not success then
+                    logger.error("Failed to restore state: " .. tostring(err))
+                    return false
+                end
+                
+                return true
+            else
+                logger.log("No active job - clearing saved state")
+                stateModule.clear(config.turtleID)
+            end
+        end
+    end
+    
+    -- No local state or job inactive - try to resume from server state
+    if config.serverChannel then
+        logger.log("No local state - checking server for active job...")
+        return stateModule.tryResumeFromServer(
+            modem, config, dig, gpsNav, logger, communication, gpsUtils, saveState
+        )
+    end
+    
+    return false
 end
 
 logger.log("Worker Turtle ID: " .. config.turtleID)
@@ -102,7 +101,7 @@ local function sendStatusUpdate(status)
     
     communication.sendStatusUpdate(modem, config.serverChannel, config.turtleID,
         status or "mining",
-        {x = dig.getx(), y = dig.gety(), z = dig.getz()},
+        dig.location(),  -- Send full location array including r and cardinalDir
         gpsPos,
         turtle.getFuelLevel()
     )
@@ -120,42 +119,6 @@ end
 local function initializeWorker()
     logger.section("Worker Initialization")
     
-    -- Check if we're restarting from previous state
-    -- loadState() handles job verification and position restoration
-    if loadState() then
-        logger.log("State restored - ready to continue mining")
-        
-        -- Send ready signal to server so it knows we're back online
-        local modem = peripheral.find("modem")
-        if modem and config.serverChannel then
-            modem.transmit(config.serverChannel, config.serverChannel, {
-                type = "worker_ready",
-                turtle_id = config.turtleID
-            })
-        end
-        
-        -- Wait for start signal
-        logger.log("Waiting for start signal...")
-
-        while true do
-        local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
-        if type(message) == "table" and message.type == "start_mining" then
-            logger.log("Start signal received!")
-            config.miningStarted = true
-            saveState()
-            sendStatusUpdate("mining")
-            break
-        end
-    end
-        
-        return -- Skip initialization, go straight to mining
-    end
-    
-    logger.log("Starting fresh initialization...")
-    logger.log("Waiting for zone assignment...")
-    
-    modem.open(config.broadcastChannel)
-    
     -- Read server channel from file saved by bootstrap
     if not fs.exists("server_channel.txt") then
         error("Server channel file not found! Worker must be initialized by bootstrap.")
@@ -169,21 +132,42 @@ local function initializeWorker()
         error("Invalid server channel")
     end
     
-    modem.open(config.serverChannel)
+    -- Open channels on modem
+    communication.initModem(config.serverChannel)
     logger.log("Listening on server channel: " .. config.serverChannel)
     
-    -- Get GPS position and notify server we're ready for assignment
-    local currentGPS = gpsUtils.getGPS(5)
-    if not currentGPS then
-        error("Failed to get GPS position for zone matching")
+    -- Try to resume from local state file or server state
+    local gotAssignment = tryResumeJob()
+    
+    if gotAssignment then
+        logger.log("Job resumed - ready to continue mining")
+        
+        -- Send ready signal to server so it knows we're back online
+        if config.serverChannel then
+            modem.transmit(config.serverChannel, config.serverChannel, {
+                type = "worker_ready",
+                turtle_id = config.turtleID
+            })
+        end
+        
+        -- Wait for start signal
+        logger.log("Waiting for start signal...")
+        while true do
+            local event, side, channel, replyChannel, message, distance = os.pullEvent("modem_message")
+            if type(message) == "table" and message.type == "start_mining" then
+                logger.log("Start signal received!")
+                config.miningStarted = true
+                saveState()
+                sendStatusUpdate("mining")
+                break
+            end
+        end
+        
+        return -- Skip zone assignment, go straight to mining
     end
     
-    logger.log("Notifying server we're ready for assignment...")
-    communication.sendReadyForAssignment(modem, config.serverChannel, config.turtleID, currentGPS)
-    
-    -- Wait for zone assignment
+    logger.log("No existing job - waiting for zone assignment...")
     local initTimeout = os.startTimer(120)
-    local gotAssignment = false
     
     while not gotAssignment do
         local event, p1, p2, p3, p4, p5 = os.pullEvent()
@@ -370,34 +354,59 @@ if config.isCoordinated then
     
     -- Quarry mining function with serpentine pattern
     local function mineQuarry()
+        -- Resume from last position if available
+        local startY = dig.gety()
+        local startZ = dig.getz()
+        local startX = dig.getx()
+        
+        logger.log("Quarry loop starting from position: " .. startX .. "," .. startY .. "," .. startZ)
+        
         local xStep = -1
         for y = 0, -depth, -1 do
-            if y <= -skip then
+            -- Skip layers above where we left off
+            if y > startY then
+                -- Skip this layer entirely
+            elseif y <= -skip then
                 for z = 0, length - 1 do
-                    local xStart = (xStep == -1) and 0 or -(width - 1)
-                    local xEnd = (xStep == -1) and -(width - 1) or 0
-                    
-                    for x = xStart, xEnd, xStep do
-                        checkFuel()
-                        checkInv()
-                        dig.goto(x, y, z, 0)
+                    -- Skip rows before where we left off on the current layer
+                    if y == startY and z < startZ then
+                        -- Track xStep direction for this row
+                        xStep = -xStep
+                    else
+                        local xStart = (xStep == -1) and 0 or -(width - 1)
+                        local xEnd = (xStep == -1) and -(width - 1) or 0
                         
-                        dig.blockLavaUp()
-                        dig.blockLava()
-                        dig.blockLavaDown()
-                        
-                        if turtle.detectDown() then
-                            -- Check if it's a turtle before digging
-                            local success, data = turtle.inspectDown()
-                            if not (success and data.name and data.name:match("^computercraft:turtle")) then
-                                turtle.digDown()
+                        for x = xStart, xEnd, xStep do
+                            -- Skip blocks before where we left off in the current row
+                            if y == startY and z == startZ then
+                                if (xStep == -1 and x > startX) or (xStep == 1 and x < startX) then
+                                    goto continue
+                                end
                             end
+                            
+                            checkFuel()
+                            checkInv()
+                            dig.goto(x, y, z, 0)
+                            
+                            dig.blockLavaUp()
+                            dig.blockLava()
+                            dig.blockLavaDown()
+                            
+                            if turtle.detectDown() then
+                                -- Check if it's a turtle before digging
+                                local success, data = turtle.inspectDown()
+                                if not (success and data.name and data.name:match("^computercraft:turtle")) then
+                                    turtle.digDown()
+                                end
+                            end
+                            
+                            dig.blockLavaDown()
+                            
+                            ::continue::
                         end
                         
-                        dig.blockLavaDown()
+                        xStep = -xStep  -- Flip direction for next row
                     end
-                    
-                    xStep = -xStep  -- Flip direction for next row
                 end
             end
         end

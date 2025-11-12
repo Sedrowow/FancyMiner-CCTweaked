@@ -390,6 +390,38 @@ local function handleWorkerStatusCheck(modem, serverChannel, state, message)
     return false
 end
 
+-- Handle worker_status_check_detailed message
+local function handleWorkerStatusCheckDetailed(modem, serverChannel, state, message)
+    local turtleID = message.turtle_id
+    local jobActive = state.deploymentComplete and state.miningStarted and 
+                      not state.aborted and state.completedCount < state.totalWorkers
+    
+    print("Worker " .. turtleID .. " detailed status check - job active: " .. tostring(jobActive))
+    
+    local lastState = nil
+    if jobActive and state.workers[turtleID] then
+        -- Include last known state for this worker
+        lastState = {
+            zone = state.workers[turtleID].zone,
+            gps_zone = state.workers[turtleID].gps_zone,
+            chestGPS = state.chestPositions,
+            startGPS = state.workers[turtleID].gps_position,
+            lastGPS = state.workers[turtleID].gps_position,
+            digLocation = state.workers[turtleID].position
+        }
+    end
+    
+    modem.transmit(serverChannel, serverChannel, {
+        type = "job_status_response_detailed",
+        turtle_id = turtleID,
+        job_active = jobActive,
+        last_state = lastState
+    })
+    
+    print("DEBUG: Detailed response sent")
+    return false
+end
+
 -- Handle abort_ack message
 local function handleAbortAck(state, message)
     state.abortAckCount = state.abortAckCount + 1
@@ -523,6 +555,9 @@ function MessageHandler.handle(modem, serverChannel, broadcastChannel, state, me
         
     elseif message.type == "worker_status_check" then
         needsSave = handleWorkerStatusCheck(modem, serverChannel, state, message)
+        
+    elseif message.type == "worker_status_check_detailed" then
+        needsSave = handleWorkerStatusCheckDetailed(modem, serverChannel, state, message)
         
     elseif message.type == "abort_ack" then
         needsSave = handleAbortAck(state, message)

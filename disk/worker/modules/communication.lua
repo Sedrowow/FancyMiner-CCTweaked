@@ -167,6 +167,37 @@ function M.checkJobStatus(modem, serverChannel, turtleID, timeout)
     end
 end
 
+-- Check job status with server and get detailed state information
+function M.checkJobStatusDetailed(modem, serverChannel, turtleID, timeout)
+    timeout = timeout or 10
+    
+    print("DEBUG: Sending detailed status check on channel " .. serverChannel .. " for turtle " .. turtleID)
+    M.sendMessage(modem, serverChannel, {
+        type = "worker_status_check_detailed",
+        turtle_id = turtleID
+    })
+    
+    local timer = os.startTimer(timeout)
+    
+    while true do
+        local event, side, channel, replyChannel, message = os.pullEvent()
+        
+        if event == "timer" and side == timer then
+            print("DEBUG: Detailed job status check timed out")
+            return nil
+        elseif event == "modem_message" then
+            print("DEBUG: Received modem message: " .. textutils.serialize(message))
+            if type(message) == "table" then
+                if message.type == "job_status_response_detailed" and message.turtle_id == turtleID then
+                    print("DEBUG: Job active = " .. tostring(message.job_active))
+                    os.cancelTimer(timer)
+                    return message
+                end
+            end
+        end
+    end
+end
+
 -- Wait for zone assignment
 function M.waitForZoneAssignment(modem, turtleID, timeout)
     timeout = timeout or 120

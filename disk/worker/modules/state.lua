@@ -64,6 +64,61 @@ function M.exists(turtleID)
     return fs.exists(getStateFile(turtleID))
 end
 
+-- Internal helper to navigate to GPS position and restore direction
+local function navigateAndRestoreDirection(gpsPos, cardinalDir, gpsNavAPI, digAPI, logger, fallbackDir)
+    if not gpsPos then
+        return false
+    end
+    
+    logger.log("Navigating to position: " .. textutils.serialize(gpsPos))
+    local navSuccess = gpsNavAPI.goto(gpsPos.x, gpsPos.y, gpsPos.z)
+    
+    if navSuccess then
+        logger.log("Successfully navigated to position")
+    else
+        logger.warn("Failed to navigate to position")
+        return false
+    end
+    
+    -- Restore cardinal direction (with fallback)
+    local dirToUse = cardinalDir or fallbackDir
+    if dirToUse then
+        logger.log("Turning to face direction: " .. dirToUse .. (cardinalDir and "" or " (fallback)"))
+        
+        if gpsNavAPI.faceDirection(dirToUse) then
+            digAPI.setCardinalDir(dirToUse)
+            logger.log("Direction set to: " .. dirToUse)
+        else
+            logger.warn("Failed to turn to direction")
+            return false
+        end
+    end
+    
+    return true
+end
+
+-- Internal helper to restore dig coordinates
+local function restoreDigCoordinates(digLocation, digAPI, logger, resetRotation)
+    if not digLocation then
+        return false
+    end
+    
+    logger.log("Restoring dig coordinates: " .. textutils.serialize(digLocation))
+    
+    local loc = digLocation
+    digAPI.setx(loc[1] or 0)
+    digAPI.sety(loc[2] or 0)
+    digAPI.setz(loc[3] or 0)
+    digAPI.setr(resetRotation and 0 or (loc[4] or 0))
+    if loc[15] then digAPI.setlast(loc[15]) end
+    if loc[17] then digAPI.setBlocksProcessedTotal(loc[17]) end
+    
+    logger.log("Dig coordinates set: " .. (loc[1] or 0) .. "," .. (loc[2] or 0) .. "," .. (loc[3] or 0) .. 
+        " r=" .. (resetRotation and 0 or (loc[4] or 0)))
+    
+    return true
+end
+
 -- Restore worker position and state from saved data
 function M.restore(savedState, digAPI, gpsNavAPI, logger)
     if not savedState then
@@ -80,50 +135,108 @@ function M.restore(savedState, digAPI, gpsNavAPI, logger)
         logger.log("Current facing direction: " .. tostring(digAPI.getCardinalDir()))
     end
     
-    -- Navigate to last GPS position first
-    if savedState.lastGPS then
-        logger.log("Navigating to last GPS position: " .. 
-            textutils.serialize(savedState.lastGPS))
-        
-        local navSuccess = gpsNavAPI.goto(
-            savedState.lastGPS.x,
-            savedState.lastGPS.y,
-            savedState.lastGPS.z
-        )
-        
-        if navSuccess then
-            logger.log("Successfully navigated to last position")
-        else
-            logger.warn("Failed to navigate to last GPS position")
-        end
-        
-        -- Restore cardinal direction
-        if savedState.lastCardinalDir then
-            logger.log("Turning to face saved direction: " .. savedState.lastCardinalDir)
-            
-            if gpsNavAPI.faceDirection(savedState.lastCardinalDir) then
-                logger.log("Direction restored to: " .. savedState.lastCardinalDir)
-            else
-                logger.warn("Failed to turn to saved direction")
-            end
-        end
-    end
+    -- Navigate to last GPS position and restore direction
+    navigateAndRestoreDirection(savedState.lastGPS, savedState.lastCardinalDir, gpsNavAPI, digAPI, logger)
     
-    -- Load dig.lua position
-    if savedState.digLocation then
-        logger.log("Loading dig coordinate system: " .. 
-            textutils.serialize(savedState.digLocation))
-        
-        local loc = savedState.digLocation
-        digAPI.setx(loc[1])
-        digAPI.sety(loc[2])
-        digAPI.setz(loc[3])
-        digAPI.setr(loc[4])
-        if loc[15] then digAPI.setlast(loc[15]) end
-        if loc[17] then digAPI.setBlocksProcessedTotal(loc[17]) end
-    end
+    -- Restore dig coordinates
+    restoreDigCoordinates(savedState.digLocation, digAPI, logger, false)
     
     return true
+end
+
+-- Internal helper to restore state with fallback support
+local function restoreStateWithFallback(savedState, digAPI, gpsNavAPI, logger, fallbackDir)
+    -- Re-initialize GPS navigation
+    if savedState.config and savedState.config.startGPS then
+        gpsNavAPI.init(true)
+        logger.log("GPS initialized and calibrated - preserved start position: " .. 
+            savedState.config.startGPS.x .. "," .. 
+            savedState.config.startGPS.y .. "," .. 
+            savedState.config.startGPS.z)
+        logger.log("Current facing direction: " .. tostring(digAPI.getCardinalDir()))
+    end
+    
+    -- Extract cardinal direction and rotation from digLocation array
+    local loc = savedState.digLocation
+    local cardinalDir = loc and loc[18]  -- Index 18 has cardinal direction
+    local rotation = loc and loc[4]      -- Index 4 has rotation
+    
+    -- Check if we have full state or need to use fallback
+    local useFallback = not cardinalDir or not rotation
+    if useFallback then
+        logger.warn("State missing cardinal direction or rotation - using fallback values")
+    end
+    
+    -- Navigate to last GPS position and restore direction
+    navigateAndRestoreDirection(
+        savedState.lastGPS,
+        cardinalDir,
+        gpsNavAPI,
+        digAPI,
+        logger,
+        fallbackDir
+    )
+    
+    -- Restore dig coordinates (reset rotation to 0 if using fallback)
+    restoreDigCoordinates(loc, digAPI, logger, useFallback)
+    
+    return true
+end
+
+-- Restore worker position and state from saved data
+function M.restore(savedState, digAPI, gpsNavAPI, logger)
+    if not savedState then
+        return false, "No saved state provided"
+    end
+    
+    return restoreStateWithFallback(savedState, digAPI, gpsNavAPI, logger, nil)
+end
+
+-- Try to resume job from server state or request new assignment
+function M.tryResumeFromServer(modem, config, digAPI, gpsNavAPI, logger, communication, gpsUtils, saveStateFn)
+    -- Check if we have an existing job on the server (even without local state file)
+    logger.log("Checking for existing job on server...")
+    local jobStatus = communication.checkJobStatusDetailed(modem, config.serverChannel, config.turtleID, 10)
+    
+    if jobStatus and jobStatus.job_active and jobStatus.last_state then
+        logger.log("Found active job on server - resuming from last known state")
+        
+        -- Restore config from server
+        config.zone = jobStatus.last_state.zone
+        config.gps_zone = jobStatus.last_state.gps_zone
+        config.chestGPS = jobStatus.last_state.chestGPS
+        config.isCoordinated = true
+        config.startGPS = jobStatus.last_state.startGPS
+        
+        -- Convert server state to savedState format and restore with fallback
+        local savedState = {
+            config = config,
+            digLocation = jobStatus.last_state.digLocation,
+            lastGPS = jobStatus.last_state.lastGPS
+        }
+        
+        local fallbackDir = config.gps_zone and config.gps_zone.initial_direction
+        restoreStateWithFallback(savedState, digAPI, gpsNavAPI, logger, fallbackDir)
+        
+        -- Save state locally
+        saveStateFn()
+        
+        logger.log("Job resumed from server state")
+        config.miningStarted = true
+        return true  -- Got assignment from server resume
+    else
+        logger.log("No existing job found - requesting new assignment")
+        
+        -- Get GPS position and notify server we're ready for assignment
+        local currentGPS = gpsUtils.getGPS(5)
+        if not currentGPS then
+            error("Failed to get GPS position for zone matching")
+        end
+        
+        logger.log("Notifying server we're ready for assignment...")
+        communication.sendReadyForAssignment(modem, config.serverChannel, config.turtleID, currentGPS)
+        return false  -- Need to wait for zone assignment
+    end
 end
 
 return M
