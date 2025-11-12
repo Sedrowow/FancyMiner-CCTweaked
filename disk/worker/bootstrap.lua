@@ -56,7 +56,18 @@ local needsUpdate = firmware.checkVersion(modem, SERVER_CHANNEL, turtleID, logge
 if needsUpdate then
     logger.log("Downloading firmware files...")
     firmware.receiveFirmware(modem, SERVER_CHANNEL, turtleID, 
-        {"quarry.lua", "dig.lua", "flex.lua"}, logger)
+        {
+            "quarry.lua",
+            "dig.lua",
+            "flex.lua",
+            "modules/logger.lua",
+            "modules/gps_utils.lua",
+            "modules/gps_navigation.lua",
+            "modules/state.lua",
+            "modules/communication.lua",
+            "modules/resource_manager.lua",
+            "modules/firmware.lua"
+        }, logger)
     
     -- Save the new version
     if fs.exists(".firmware_version_new") then
