@@ -105,6 +105,7 @@ local function main()
         
         -- Check for resource timeouts and firmware transfer timeouts periodically
         if event == "timer" and p1 == timeoutCheckTimer then
+            print("DEBUG: Timeout check timer fired")
             local timedOut, turtleID = ResourceManager.checkTimeout(state, "fuel")
             if timedOut then
                 print("DEBUG: Fuel timeout triggered for turtle " .. turtleID)
@@ -125,6 +126,7 @@ local function main()
             MessageHandler.checkFirmwareTimeouts(modem, SERVER_CHANNEL, BROADCAST_CHANNEL, state)
             
             timeoutCheckTimer = os.startTimer(10)
+            print("DEBUG: Next timeout check in 10 seconds")
         end
         
         if event == "modem_message" then

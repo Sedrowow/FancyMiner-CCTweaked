@@ -111,7 +111,7 @@ local function restoreDigCoordinates(digLocation, digAPI, logger, resetRotation)
     digAPI.setz(loc[3] or 0)
     digAPI.setr(resetRotation and 0 or (loc[4] or 0))
     if loc[15] then digAPI.setlast(loc[15]) end
-    if loc[17] then digAPI.setBlocksProcessedTotal(loc[17]) end
+    if loc[17] then digAPI.setBlocksProcessed(loc[17]) end
     
     logger.log("Dig coordinates set: " .. (loc[1] or 0) .. "," .. (loc[2] or 0) .. "," .. (loc[3] or 0) .. 
         " r=" .. (resetRotation and 0 or (loc[4] or 0)))
