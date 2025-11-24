@@ -2,11 +2,12 @@
 -- This script checks for updates and re-runs setup if a new version is detected
 
 local COMPONENT_TYPE = "COMPONENT_TYPE_PLACEHOLDER"  -- Will be replaced by setup script
+local REPO_RAW_BASE = 'https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/aaaa/'
 
 local function checkVersion()
     print("Checking for updates...")
     
-    local versionUrl = 'https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/version.txt'
+    local versionUrl = REPO_RAW_BASE .. 'version.txt'
     fs.delete('.remote_version.txt')
     shell.run('wget', versionUrl, '.remote_version.txt', '-f')
     
@@ -31,7 +32,7 @@ local function checkVersion()
         print('Updating ' .. COMPONENT_TYPE .. '...')
         
         -- Download updated files based on component type
-        local baseUrl = 'https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/'
+        local baseUrl = REPO_RAW_BASE
         
         if COMPONENT_TYPE == "server" then
             print("Downloading orchestrate_server.lua...")

@@ -21,6 +21,8 @@ local function confirm(prompt)
     return key:lower() == "y"
 end
 
+local REPO_RAW_BASE = "https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/aaaa/"
+
 local function setupWorkerTurtle()
     printTitle("Worker Turtle Setup")
     print("This will install the bootstrap loader and modules")
@@ -39,7 +41,7 @@ local function setupWorkerTurtle()
     
     print("Downloading worker modules...")
     
-    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/disk/worker/modules/"
+    local baseUrl = REPO_RAW_BASE .. "disk/worker/modules/"
     local moduleFiles = {
         "logger.lua", "gps_utils.lua", "gps_navigation.lua",
         "state.lua", "communication.lua", "resource_manager.lua", "firmware.lua"
@@ -59,7 +61,7 @@ local function setupWorkerTurtle()
     print()
     print("Downloading bootstrap loader...")
     
-    local url = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/disk/worker/bootstrap.lua"
+    local url = REPO_RAW_BASE .. "disk/worker/bootstrap.lua"
     fs.delete("startup.lua")
     local success = shell.run("wget", url, "startup.lua", "-f")
     
@@ -111,7 +113,7 @@ local function setupDeploymentTurtle()
         {url = "disk/worker/bootstrap.lua", name = "bootstrap.lua"}
     }
     
-    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/"
+    local baseUrl = REPO_RAW_BASE
     
     for _, file in ipairs(files) do
         print("Downloading " .. file.name .. "...")
@@ -136,7 +138,7 @@ local function setupDeploymentTurtle()
         "chest_manager.lua", "communication.lua"
     }
     
-    local moduleBaseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/deploy/"
+    local moduleBaseUrl = REPO_RAW_BASE .. "deploy/"
     
     for _, filename in ipairs(deployModules) do
         print("Downloading deploy/" .. filename .. "...")
@@ -151,7 +153,7 @@ local function setupDeploymentTurtle()
     
     print()
     print("Downloading auto-update script...")
-    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/"
+    local baseUrl = REPO_RAW_BASE
     fs.delete("auto_update.lua")
     shell.run("wget", baseUrl .. "auto_update.lua", "auto_update.lua", "-f")
     
@@ -220,7 +222,7 @@ local function setupOrchestrationServer()
     print()
     print("Downloading orchestration server...")
     
-    local url = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/orchestrate_server.lua"
+    local url = REPO_RAW_BASE .. "orchestrate_server.lua"
     fs.delete("orchestrate_server.lua")
     local success = shell.run("wget", url, "orchestrate_server.lua", "-f")
     
@@ -243,7 +245,7 @@ local function setupOrchestrationServer()
         "resource_manager.lua", "zone_manager.lua", "message_handler.lua"
     }
     
-    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/orchestrate/"
+    local baseUrl = REPO_RAW_BASE .. "orchestrate/"
     
     for _, filename in ipairs(orchestrateModules) do
         print("Downloading orchestrate/" .. filename .. "...")
@@ -258,7 +260,7 @@ local function setupOrchestrationServer()
     
     print()
     print("Downloading auto-update script...")
-    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/"
+    local baseUrl = REPO_RAW_BASE
     fs.delete("auto_update.lua")
     shell.run("wget", baseUrl .. "auto_update.lua", "auto_update.lua", "-f")
     
@@ -357,7 +359,7 @@ local function setupFirmwareDisk()
     
     print("Downloading firmware files...")
     
-    local baseUrl = "https://raw.githubusercontent.com/NoahGori/FancyMiner-CCTweaked/main/disk/worker/"
+    local baseUrl = REPO_RAW_BASE .. "disk/worker/"
     local files = {"bootstrap.lua", "quarry.lua", "dig.lua", "flex.lua"}
     
     for _, filename in ipairs(files) do
