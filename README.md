@@ -38,4 +38,6 @@ wget run https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/refs/he
 
 CREDIT GOES TO [Flexico](https://github.com/Flexico) that made the original  [Digsoft: A Fancy Resumable Quarry Program](https://forums.computercraft.cc/index.php?topic=316.0)]
 i improved upon his script, as i thought, its a good start
-i thank him whereas he made the most work. if he wants me to take these improved scripts down, i will not hestitate to do so, as i didnt asked for hsi consent yet.
+i thank him whereas he made the most work.
+
+also i also thank for the consent Flexico :-D
