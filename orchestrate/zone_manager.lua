@@ -31,8 +31,13 @@ function ZoneManager.calculateZones(width, length, depth, skip, numWorkers)
     return zones
 end
 
--- Convert relative zones to GPS coordinates
-function ZoneManager.createGPSZones(zones, startGPS)
+-- Deployer faces a direction, workers face opposite (rotation 180)
+-- dig.lua +X is to deployer's right, workers are placed along this axis
+--   "north" = deployer's right is GPS +X (east)
+--   "south" = deployer's right is GPS -X (west)
+--   "east" = deployer's right is GPS +Z (south)
+--   "west" = deployer's right is GPS -Z (north)
+function ZoneManager.createGPSZones(zones, startGPS, initialDirection)
     if not zones then
         return nil, "zones is nil"
     end
@@ -41,13 +46,58 @@ function ZoneManager.createGPSZones(zones, startGPS)
         return nil, "startGPS is nil"
     end
     
+    if not initialDirection then
+        return nil, "initialDirection is nil"
+    end
+    
     local gpsZones = {}
     for i, zone in ipairs(zones) do
+        local gps_xmin, gps_xmax, gps_zmin, gps_zmax
+        
+        -- Transform dig.lua coordinates to GPS coordinates based on direction
+        -- The deployer faces a direction, workers face opposite (rotation 180)
+        -- dig.lua +X is to the deployer's right, workers are placed along this axis
+        if initialDirection == "north" then
+            -- Deployer faces north (-Z), workers face south (+Z)
+            -- Deployer's right (dig.lua +X) is east (+X GPS)
+            -- dig.lua +Z (forward for deployer) = north (-Z GPS)
+            gps_xmin = startGPS.x + zone.xmin
+            gps_xmax = startGPS.x + zone.xmax
+            gps_zmin = startGPS.z - zone.zmax
+            gps_zmax = startGPS.z - zone.zmin
+        elseif initialDirection == "south" then
+            -- Deployer faces south (+Z), workers face north (-Z)
+            -- Deployer's right (dig.lua +X) is west (-X GPS)
+            -- dig.lua +Z (forward for deployer) = south (+Z GPS)
+            gps_xmin = startGPS.x - zone.xmax
+            gps_xmax = startGPS.x - zone.xmin
+            gps_zmin = startGPS.z + zone.zmin
+            gps_zmax = startGPS.z + zone.zmax
+        elseif initialDirection == "east" then
+            -- Deployer faces east (+X), workers face west (-X)
+            -- Deployer's right (dig.lua +X) is south (+Z GPS)
+            -- dig.lua +Z (forward for deployer) = east (+X GPS)
+            gps_xmin = startGPS.x + zone.zmin
+            gps_xmax = startGPS.x + zone.zmax
+            gps_zmin = startGPS.z + zone.xmin
+            gps_zmax = startGPS.z + zone.xmax
+        elseif initialDirection == "west" then
+            -- Deployer faces west (-X), workers face east (+X)
+            -- Deployer's right (dig.lua +X) is north (-Z GPS)
+            -- dig.lua +Z (forward for deployer) = west (-X GPS)
+            gps_xmin = startGPS.x - zone.zmax
+            gps_xmax = startGPS.x - zone.zmin
+            gps_zmin = startGPS.z - zone.xmax
+            gps_zmax = startGPS.z - zone.xmin
+        else
+            return nil, "Invalid initialDirection: " .. tostring(initialDirection)
+        end
+        
         gpsZones[i] = {
-            gps_xmin = startGPS.x + zone.xmin,
-            gps_xmax = startGPS.x + zone.xmax,
-            gps_zmin = startGPS.z + zone.zmin,
-            gps_zmax = startGPS.z + zone.zmax,
+            gps_xmin = gps_xmin,
+            gps_xmax = gps_xmax,
+            gps_zmin = gps_zmin,
+            gps_zmax = gps_zmax,
             gps_ymin = startGPS.y + zone.ymin,
             gps_ymax = startGPS.y + zone.ymax,
             assigned = false
@@ -80,36 +130,34 @@ function ZoneManager.findZoneForPosition(gpsZones, workerGPS)
 end
 
 -- Calculate initial cardinal direction based on chest positions
+-- The deployer places chests with output at (0,0,0) and fuel at (+1,0,0) in dig.lua coords
+-- Workers are placed at their zone's xmin (e.g., 0, 10, 20...) facing rotation 180 (opposite of +X)
+-- Returns which cardinal direction corresponds to dig.lua +X axis
 function ZoneManager.calculateInitialDirection(fuelChestGPS, outputChestGPS)
     if not fuelChestGPS or not outputChestGPS then
-        return "south" -- default
+        return "east", "No chest positions provided, defaulting to east"
     end
     
     local deltaX = fuelChestGPS.x - outputChestGPS.x
     local deltaZ = fuelChestGPS.z - outputChestGPS.z
     
-    -- Fuel chest is at +1 X in dig.lua coordinates
-    -- Workers face rotation 180 = opposite direction of +X
-    -- The original code had an inconsistency - fixing the mapping
+    -- Fuel chest is at dig.lua (+1, 0, 0) relative to output chest at (0, 0, 0)
+    -- So the GPS difference tells us which cardinal direction is dig.lua +X
     if math.abs(deltaX) > math.abs(deltaZ) then
         if deltaX > 0 then
-            -- Fuel is east of output, so dig.lua +X = cardinal east
-            -- Workers face opposite direction: west (but code had south)
-            return "south"
+            -- Fuel is east (+X GPS) of output, so dig.lua +X = GPS +X = east
+            return "east"
         else
-            -- Fuel is west of output, so dig.lua +X = cardinal west
-            -- Workers face opposite direction: east (but code had north)
-            return "north"
+            -- Fuel is west (-X GPS) of output, so dig.lua +X = GPS -X = west
+            return "west"
         end
     else
         if deltaZ > 0 then
-            -- Fuel is south of output, so dig.lua +X = cardinal south
-            -- Workers face opposite direction: north (but code had east)
-            return "east"
+            -- Fuel is south (+Z GPS) of output, so dig.lua +X = GPS +Z = south
+            return "south"
         else
-            -- Fuel is north of output, so dig.lua +X = cardinal north
-            -- Workers face opposite direction: south (but code had west)
-            return "west"
+            -- Fuel is north (-Z GPS) of output, so dig.lua +X = GPS -Z = north
+            return "north"
         end
     end
 end

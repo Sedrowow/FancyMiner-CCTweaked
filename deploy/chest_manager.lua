@@ -28,10 +28,22 @@ function M.placeFuelChest(startGPS, digAPI)
         return nil, "No fuel chest in slot 2 or placement failed"
     end
     
+    -- Get actual GPS position after moving (don't assume coordinate alignment)
+    local positioning = require("deploy.positioning")
+    local actualGPS, err = positioning.getGPS(3)
+    if not actualGPS then
+        print("Warning: Could not get GPS at fuel chest location, using calculated position")
+        return {
+            x = startGPS.x + 1,
+            y = startGPS.y + 1,
+            z = startGPS.z
+        }
+    end
+    
     return {
-        x = startGPS.x + 1,
-        y = startGPS.y + 1,
-        z = startGPS.z
+        x = actualGPS.x,
+        y = actualGPS.y + 1,  -- Chest is placed above turtle
+        z = actualGPS.z
     }
 end
 

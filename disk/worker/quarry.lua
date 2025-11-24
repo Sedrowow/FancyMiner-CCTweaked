@@ -110,9 +110,18 @@ end
 -- Coordinated resource access wrapper
 local function queuedResourceAccess(resourceType, returnPos)
     sendStatusUpdate("queued")
-    resourceMgr.accessResource(resourceType, returnPos, modem, config.serverChannel,
-        config.turtleID, config, dig, gpsNav, logger)
-    sendStatusUpdate("mining")
+    local ok, err = pcall(function()
+        resourceMgr.accessResource(resourceType, returnPos, modem, config.serverChannel,
+            config.turtleID, config, dig, gpsNav, logger)
+    end)
+    if not ok then
+        logger.warn("Resource access error: " .. tostring(err))
+    end
+    if not config.aborted then
+        sendStatusUpdate("mining")
+    else
+        sendStatusUpdate("aborted")
+    end
 end
 
 -- Initialize worker - receive firmware and zone assignment
@@ -191,12 +200,27 @@ local function initializeWorker()
                     config.isCoordinated = true
                     config.startGPS = verifyGPS
                     
-                    -- Set initial cardinal direction from server
-                    if message.initial_direction then
-                        dig.setCardinalDir(message.initial_direction)
-                        logger.log("Initial direction set to: " .. message.initial_direction)
+                    -- Handle orientation: desired_facing indicates the cardinal we want turtle to face physically.
+                    local facing = message.desired_facing or message.initial_direction
+                    if facing then
+                        -- Try GPS-based facing first if navigation API supports it
+                        if gpsNav.faceDirection and gpsNav.faceDirection(facing) then
+                            logger.log("Rotated to face " .. facing .. " via GPS navigation API")
+                        else
+                            -- Fallback heuristic rotations assuming initial placement may differ.
+                            -- We attempt minimal rotations by cycling through left turns until dig.getCardinalDir()==facing
+                            local attempts = 0
+                            while dig.getCardinalDir() ~= facing and attempts < 4 do
+                                dig.left(1)
+                                attempts = attempts + 1
+                            end
+                            logger.log("Heuristic rotation applied; current facing=" .. tostring(dig.getCardinalDir()))
+                        end
+                        -- Set internal cardinal reference for dig API to desired facing for consistent zone math.
+                        dig.setCardinalDir(facing)
+                        logger.log("Cardinal direction initialized: " .. facing)
                     else
-                        logger.warn("No initial direction provided by server")
+                        logger.warn("No facing information provided by server")
                     end
                     
                     -- Initialize GPS navigation
@@ -307,9 +331,9 @@ if config.isCoordinated then
     local stateSaveInterval = 30 -- Save state every 30 seconds
     
     dig.fwd = function()
-        -- Check for abort command (non-blocking)
+        -- Graceful abort: just stop further movement without throwing
         if config.isCoordinated and config.aborted then
-            error("Operation aborted by server")
+            return false
         end
         
         -- Check fuel level before moving
@@ -363,11 +387,13 @@ if config.isCoordinated then
         
         local xStep = -1
         for y = 0, -depth, -1 do
+            if config.aborted then return end
             -- Skip layers above where we left off
             if y > startY then
                 -- Skip this layer entirely
             elseif y <= -skip then
                 for z = 0, length - 1 do
+                    if config.aborted then return end
                     -- Skip rows before where we left off on the current layer
                     if y == startY and z < startZ then
                         -- Track xStep direction for this row
@@ -377,6 +403,7 @@ if config.isCoordinated then
                         local xEnd = (xStep == -1) and -(width - 1) or 0
                         
                         for x = xStart, xEnd, xStep do
+                            if config.aborted then return end
                             -- Skip blocks before where we left off in the current row
                             if y == startY and z == startZ then
                                 if (xStep == -1 and x > startX) or (xStep == 1 and x < startX) then
@@ -386,7 +413,11 @@ if config.isCoordinated then
                             
                             checkFuel()
                             checkInv()
-                            dig.goto(x, y, z, 0)
+                            if not config.aborted then
+                                dig.goto(x, y, z, 0)
+                            else
+                                return
+                            end
                             
                             dig.blockLavaUp()
                             dig.blockLava()
@@ -411,7 +442,9 @@ if config.isCoordinated then
             end
         end
         
-        dig.goto(0, 0, 0, 0)
+        if not config.aborted then
+            dig.goto(0, 0, 0, 0)
+        end
     end
     
     -- Run the actual quarry operation with abort handling

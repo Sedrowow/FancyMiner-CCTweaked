@@ -4,7 +4,7 @@
 local M = {}
 
 -- Request access to a resource (fuel or output)
-function M.requestAccess(modem, serverChannel, turtleID, resourceType, logger)
+function M.requestAccess(modem, serverChannel, turtleID, resourceType, logger, config)
     if not modem or not serverChannel then
         return true -- Not in coordinated mode
     end
@@ -25,6 +25,12 @@ function M.requestAccess(modem, serverChannel, turtleID, resourceType, logger)
     local approachDir = nil
     
     while not granted do
+        -- Abort check: if server issued abort while waiting in queue, stop gracefully
+        if config and config.aborted then
+            logger.log("Abort detected while waiting for " .. resourceType .. " access; leaving queue")
+            return false, nil, nil, "aborted"
+        end
+
         local event, p1, p2, p3, p4 = os.pullEvent()
         
         if event == "timer" and p1 == timeout then
@@ -33,7 +39,11 @@ function M.requestAccess(modem, serverChannel, turtleID, resourceType, logger)
         elseif event == "modem_message" then
             local message = p4
             if type(message) == "table" then
-                if message.type == "resource_granted" and 
+                if message.type == "abort_mining" then
+                    if config then config.aborted = true end
+                    logger.log("Abort message received while queued for " .. resourceType)
+                    return false, nil, nil, "aborted"
+                elseif message.type == "resource_granted" and 
                    message.turtle_id == turtleID and
                    message.resource == resourceType then
                     granted = true
@@ -135,11 +145,15 @@ function M.accessResource(resourceType, returnPos, modem, serverChannel, turtleI
     end
     
     -- Request access
-    local success, chestPos, approachDir = M.requestAccess(
-        modem, serverChannel, turtleID, resourceType, logger
+    local success, chestPos, approachDir, errType = M.requestAccess(
+        modem, serverChannel, turtleID, resourceType, logger, config
     )
     
     if not success then
+        if errType == "aborted" then
+            logger.log("Resource access aborted before grant; skipping " .. resourceType .. " operation")
+            return
+        end
         logger.error("Failed to get " .. resourceType .. " access")
         return
     end
@@ -154,7 +168,16 @@ function M.accessResource(resourceType, returnPos, modem, serverChannel, turtleI
         return
     end
     
+    -- Abort after navigation start
+    if config.aborted then
+        logger.log("Abort detected before navigating to chest")
+        return
+    end
     gpsNavAPI.goto(chestGPS.x, chestGPS.y - 1, chestGPS.z)
+    if config.aborted then
+        logger.log("Abort detected at chest; skipping operation")
+        return
+    end
     
     -- Perform operation
     if resourceType == "output" then
@@ -169,20 +192,24 @@ function M.accessResource(resourceType, returnPos, modem, serverChannel, turtleI
     logger.log("Operation complete, returning to position...")
     
     -- Return to target position
-    local returnSuccess = gpsNavAPI.goto(
-        targetReturnPos.x, 
-        targetReturnPos.y, 
-        targetReturnPos.z
-    )
-    
-    if not returnSuccess then
-        logger.error("Failed to return to target position!")
+    if not config.aborted then
+        local returnSuccess = gpsNavAPI.goto(
+            targetReturnPos.x, 
+            targetReturnPos.y, 
+            targetReturnPos.z
+        )
+        if not returnSuccess then
+            logger.error("Failed to return to target position!")
+        else
+            logger.log("Successfully arrived at saved GPS position")
+        end
     else
-        logger.log("Successfully arrived at saved GPS position")
+        logger.log("Abort detected; skipping return navigation")
     end
     
+    
     -- Restore facing direction
-    if savedDirection then
+    if not config.aborted and savedDirection then
         logger.log("Restoring direction to: " .. savedDirection)
         if gpsNavAPI.faceDirection(savedDirection) then
             digAPI.setr(savedRotation)
@@ -196,7 +223,11 @@ function M.accessResource(resourceType, returnPos, modem, serverChannel, turtleI
     end
     
     -- Release resource
-    M.releaseResource(modem, serverChannel, turtleID, resourceType, logger)
+    if not config.aborted then
+        M.releaseResource(modem, serverChannel, turtleID, resourceType, logger)
+    else
+        logger.log("Abort detected; not releasing resource (server will reset queues)")
+    end
 end
 
 -- Calculate fuel threshold based on maximum distance to fuel chest

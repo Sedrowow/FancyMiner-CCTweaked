@@ -61,14 +61,23 @@ local function handleChestPositions(modem, serverChannel, state, message)
         return false
     end
     
-    local gpsZones, err = ZoneManager.createGPSZones(state.zones, startGPS)
+    -- Calculate initial direction based on chest positions
+    local initialDirection = ZoneManager.calculateInitialDirection(
+        state.chestPositions.fuel,
+        state.chestPositions.output
+    )
+    
+    print("Calculated initial direction: " .. initialDirection)
+    
+    local gpsZones, err = ZoneManager.createGPSZones(state.zones, startGPS, initialDirection)
     if not gpsZones then
         print("Error creating GPS zones: " .. err)
         return false
     end
     
     state.gpsZones = gpsZones
-    print("GPS zones calculated")
+    state.initialDirection = initialDirection
+    print("GPS zones calculated with coordinate transformation")
     
     if not state.firmwareLoaded then
         state.firmwareLoaded = true
@@ -215,12 +224,13 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
         gpsZone.assigned = true
         gpsZone.turtle_id = turtleID
         
-        local initialDirection = ZoneManager.calculateInitialDirection(
+        -- Use stored initial direction from chest position calculation
+        local initialDirection = state.initialDirection or ZoneManager.calculateInitialDirection(
             state.chestPositions.fuel,
             state.chestPositions.output
         )
         
-        print("  Calculated initial direction: " .. initialDirection)
+        print("  Using initial direction: " .. initialDirection)
         
         state.workers[turtleID].zone_index = matchedZone
         state.workers[turtleID].status = "assigned"
@@ -235,7 +245,8 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
                 fuel = state.chestPositions.fuel,
                 output = state.chestPositions.output
             },
-            initial_direction = initialDirection,
+            initial_direction = initialDirection,  -- Cardinal for dig +X axis mapping
+            desired_facing = initialDirection,     -- Workers should face this cardinal to mine consistent direction
             server_channel = serverChannel
         })
         
