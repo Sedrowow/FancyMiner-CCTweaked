@@ -467,6 +467,11 @@ local function checkProgress()
     dug = dig.getdug() or 0 -- Corrected to get current dug value, handle nil
     ydeep = dig.gety() or 0 -- Update ydeep, handle nil
 
+    -- Periodic GPS verification (every ~100 blocks processed)
+    if dig.isGPSEnabled() and current_processed_blocks % 100 < 1 then
+        dig.verifyPositionGPS()
+    end
+
     -- checkReceivedCommand() -- Remove this if not doing remote control
 end --function checkProgress()
 
@@ -575,6 +580,43 @@ if reloaded then
  flex.send("Resuming "..tostring(zmax).."x"
    ..tostring(xmax).." quarry",colors.yellow)
 
+ -- GPS position verification happens in dig.loadCoords()
+ -- If GPS wasn't previously available but is now, offer to establish it
+ if not dig.isGPSEnabled() then
+  local wx, wy, wz = dig.getGPSPosition(2)
+  if wx then
+   flex.send("GPS is now available!", colors.green)
+   flex.send("Returning to origin to establish GPS...", colors.cyan)
+   
+   -- Save current position
+   local resume_x = dig.getx()
+   local resume_y = dig.gety()
+   local resume_z = dig.getz()
+   local resume_r = dig.getr()
+   
+   -- Return to origin
+   gotoBase()
+   
+   -- Establish GPS at origin
+   if dig.establishGPSAtOrigin() then
+    flex.send("GPS established successfully!", colors.green)
+   end
+   
+   -- Return to mining position
+   flex.send("Returning to mining position...", colors.yellow)
+   dig.gotor(0)
+   checkFuel()
+   dig.gotoy(math.min(resume_y,-skip))
+   checkFuel()
+   dig.gotoz(resume_z)
+   checkFuel()
+   dig.gotox(resume_x)
+   checkFuel()
+   dig.gotor(resume_r)
+   checkFuel()
+  end
+ end
+ 
  local resume_x = dig.getx()
  local resume_y = dig.gety()
  local resume_z = dig.getz()
@@ -644,6 +686,9 @@ else
   flex.send("To bedrock!",colors.lightGray)
  end --if/else
 
+ -- Initialize GPS at starting position (new quarry, at origin)
+ flex.send("Initializing GPS system...", colors.cyan)
+ dig.initGPSOrigin(false) -- Don't force new origin
 
 end --if/else
 
