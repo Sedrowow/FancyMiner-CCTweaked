@@ -288,6 +288,7 @@ local speed_check_threshold = 50 -- Recalculate speed after processing this many
 local dug = dig.getdug() or 0 -- Track dug blocks from previous checkProgress call, handle nil
 local processed_at_last_check = dig.getBlocksProcessed() or 0 -- Track processed blocks from previous checkProgress call, handle nil
 local ydeep = dig.getymin() or 0 -- Track min Y from previous checkProgress call, handle nil
+local last_gps_check_block = 0 -- Track when we last did GPS verification
 
 -- Add this function to gather and send status (DEFINED OUTSIDE any function)
 local function sendStatus()
@@ -467,9 +468,12 @@ local function checkProgress()
     dug = dig.getdug() or 0 -- Corrected to get current dug value, handle nil
     ydeep = dig.gety() or 0 -- Update ydeep, handle nil
 
-    -- Periodic GPS verification (every ~100 blocks processed)
-    if dig.isGPSEnabled() and current_processed_blocks % 100 < 1 then
-        dig.verifyPositionGPS()
+    -- Periodic GPS verification (every 200 blocks processed)
+    -- Only verify if we've crossed a boundary (not on every call)
+    local last_gps_check_block = last_gps_check_block or 0
+    if dig.isGPSEnabled() and (current_processed_blocks - last_gps_check_block) >= 200 then
+        dig.verifyPositionGPS(1) -- Tolerance of 1 block
+        last_gps_check_block = current_processed_blocks
     end
 
     -- checkReceivedCommand() -- Remove this if not doing remote control

@@ -499,8 +499,12 @@ function initGPSOrigin(force_new)
 end
 
 -- Verify and correct position using GPS
-function verifyPositionGPS()
+function verifyPositionGPS(tolerance)
   if not gps_enabled then return false end
+  
+  -- Default tolerance: only correct if more than 1 block off
+  -- This prevents minor GPS fluctuations from causing false corrections
+  tolerance = tolerance or 1
   
   local wx, wy, wz = getGPSPosition(3)
   if not wx then
@@ -511,16 +515,32 @@ function verifyPositionGPS()
   -- Calculate what our relative position should be based on GPS
   local gps_rx, gps_ry, gps_rz = worldToRelative(wx, wy, wz)
   
-  -- Check if there's a discrepancy
+  -- Round to nearest integer (GPS can have sub-block precision)
+  gps_rx = math.floor(gps_rx + 0.5)
+  gps_ry = math.floor(gps_ry + 0.5)
+  gps_rz = math.floor(gps_rz + 0.5)
+  
+  -- Check if there's a significant discrepancy
   local dx = math.abs(gps_rx - xdist)
   local dy = math.abs(gps_ry - ydist)
   local dz = math.abs(gps_rz - zdist)
   
-  if dx > 0 or dy > 0 or dz > 0 then
-    flex.send("GPS correction: ("..xdist..","..ydist..","..zdist..") -> ("..gps_rx..","..gps_ry..","..gps_rz..")", colors.orange)
+  -- Only correct if difference exceeds tolerance
+  if dx > tolerance or dy > tolerance or dz > tolerance then
+    flex.send("GPS correction detected: Δ=("..dx..","..dy..","..dz..")", colors.orange)
+    flex.send("Position: ("..xdist..","..ydist..","..zdist..") -> ("..gps_rx..","..gps_ry..","..gps_rz..")", colors.orange)
     xdist = gps_rx
     ydist = gps_ry
     zdist = gps_rz
+    
+    -- Update min/max bounds if necessary
+    if xdist < xmin then xmin = xdist end
+    if xdist > xmax then xmax = xdist end
+    if ydist < ymin then ymin = ydist end
+    if ydist > ymax then ymax = ydist end
+    if zdist < zmin then zmin = zdist end
+    if zdist > zmax then zmax = zdist end
+    
     saveCoords()
     return true
   end
@@ -569,6 +589,11 @@ function recoverPositionGPS()
   
   -- Calculate relative position from GPS
   local new_x, new_y, new_z = worldToRelative(wx, wy, wz)
+  
+  -- Round to nearest integer (GPS has sub-block precision)
+  new_x = math.floor(new_x + 0.5)
+  new_y = math.floor(new_y + 0.5)
+  new_z = math.floor(new_z + 0.5)
   
   flex.send("GPS recovery: Position corrected from ("..xdist..","..ydist..","..zdist..") to ("..new_x..","..new_y..","..new_z..")", colors.green)
   
@@ -689,11 +714,17 @@ function loadCoords(save)
     local wx, wy, wz = getGPSPosition(3)
     if wx then
       local gps_rx, gps_ry, gps_rz = worldToRelative(wx, wy, wz)
+      -- Round to nearest integer
+      gps_rx = math.floor(gps_rx + 0.5)
+      gps_ry = math.floor(gps_ry + 0.5)
+      gps_rz = math.floor(gps_rz + 0.5)
+      
       local dx = math.abs(gps_rx - xdist)
       local dy = math.abs(gps_ry - ydist)
       local dz = math.abs(gps_rz - zdist)
       
-      if dx > 0 or dy > 0 or dz > 0 then
+      -- Only correct if difference is more than 1 block (chunk unload scenario)
+      if dx > 1 or dy > 1 or dz > 1 then
         flex.send("Position mismatch detected! Correcting...", colors.orange)
         recoverPositionGPS()
       else

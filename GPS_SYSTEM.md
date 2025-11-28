@@ -32,10 +32,11 @@ The system verifies position in three scenarios:
   - Compares actual position vs expected position
   - Auto-corrects if there's a mismatch (chunk unload issue)
 
-#### b) Periodic Checks (Every ~100 blocks)
+#### b) Periodic Checks (Every 200 blocks)
 - During mining, `checkProgress()` calls `dig.verifyPositionGPS()` periodically
-- Checks if GPS position matches expected position
-- Auto-corrects any drift
+- Only corrects if position differs by more than 1 block (prevents false positives)
+- GPS coordinates are rounded to nearest integer to avoid sub-block precision issues
+- Auto-corrects any significant drift
 
 #### c) Manual Recovery
 - Call `dig.recoverPositionGPS()` to force a position check and correction
@@ -87,8 +88,11 @@ If GPS hosts are not available, the system automatically falls back to relative 
 - `dig.worldToRelative(wx, wy, wz)` - Convert world to relative coords
 
 ### Recovery Functions
-- `dig.verifyPositionGPS()` - Check and correct position if needed
+- `dig.verifyPositionGPS(tolerance)` - Check and correct position if needed
+  - `tolerance` (optional): Number of blocks difference to tolerate before correcting (default: 1)
+  - Returns true if correction was made, false otherwise
 - `dig.recoverPositionGPS()` - Force position recovery from GPS
+  - Always rounds to nearest integer block position
 
 ### Setting GPS Origin Manually
 ```lua
@@ -172,6 +176,13 @@ GPS not available, using relative coordinates only
 ```
 
 ## Important Behaviors
+
+### GPS Precision and Tolerance
+- GPS coordinates have sub-block precision (decimals)
+- All GPS positions are automatically rounded to nearest integer
+- Position corrections only occur if difference exceeds 1 block
+- This prevents false corrections from minor GPS fluctuations or rounding errors
+- Ensures turtle stays within quarry bounds
 
 ### GPS Origin Preservation
 - Once a GPS origin is established and saved to `dig_save.cfg`, it is **never overwritten**
