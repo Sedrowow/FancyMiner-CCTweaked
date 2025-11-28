@@ -124,7 +124,7 @@ function doDump(z)
     blockCount = blockCount - 1
     end --if
 
-    if blockCount > 0 then
+    if blockCount <= 0 then
     if z == "fwd" then
       turtle.drop()
     elseif z == "down" then
@@ -380,13 +380,6 @@ lastmove = "r-"
 dugtotal = 0
 blocks_processed_total = 0 -- Added: Variable to track total blocks processed
 
--- GPS tracking variables
-gps_origin_x = nil -- World X coordinate of origin (0,0,0 in relative coords)
-gps_origin_y = nil -- World Y coordinate of origin
-gps_origin_z = nil -- World Z coordinate of origin
-gps_enabled = false -- Whether GPS is available
-gps_last_check = nil -- Last known GPS position
-
 function getx() return xdist end
 function gety() return ydist end
 function getz() return zdist end
@@ -432,187 +425,6 @@ function getBlocksProcessed() return blocks_processed_total end
 function setBlocksProcessed(d) blocks_processed_total = d end
 function addBlocksProcessed(d) blocks_processed_total = blocks_processed_total + d end
 
--- GPS getter/setter functions
-function getGPSOrigin() return gps_origin_x, gps_origin_y, gps_origin_z end
-function setGPSOrigin(x, y, z)
-  gps_origin_x = x
-  gps_origin_y = y
-  gps_origin_z = z
-  gps_enabled = (x ~= nil and y ~= nil and z ~= nil)
-end
-
-function isGPSEnabled() return gps_enabled end
-
--- Get current GPS world coordinates
-function getGPSPosition(timeout)
-  timeout = timeout or 2
-  local wx, wy, wz = gps.locate(timeout, false)
-  if wx then
-    gps_last_check = {wx, wy, wz}
-    return wx, wy, wz
-  end
-  return nil, nil, nil
-end
-
--- Convert relative coordinates to world coordinates
-function relativeToWorld(rx, ry, rz)
-  if not gps_enabled then return nil, nil, nil end
-  return gps_origin_x + rx, gps_origin_y + ry, gps_origin_z + rz
-end
-
--- Convert world coordinates to relative coordinates
-function worldToRelative(wx, wy, wz)
-  if not gps_enabled then return nil, nil, nil end
-  return wx - gps_origin_x, wy - gps_origin_y, wz - gps_origin_z
-end
-
--- Initialize GPS origin at current position (call this at start)
-function initGPSOrigin(force_new)
-  -- If GPS origin already exists and we're not forcing a new one, verify it instead
-  if gps_enabled and not force_new then
-    flex.send("GPS origin already set at ("..gps_origin_x..","..gps_origin_y..","..gps_origin_z..")", colors.cyan)
-    -- Verify our current position matches expectations
-    return verifyPositionGPS()
-  end
-  
-  local wx, wy, wz = getGPSPosition(3)
-  if wx then
-    -- Current position in relative coords
-    local rx, ry, rz = xdist, ydist, zdist
-    
-    -- If we're not at origin (0,0,0) and don't have GPS origin yet, we need to go to origin first
-    if not gps_enabled and (rx ~= 0 or ry ~= 0 or rz ~= 0) then
-      flex.send("Not at origin. Please return to (0,0,0) before initializing GPS", colors.orange)
-      flex.send("Current position: ("..rx..","..ry..","..rz..")", colors.white)
-      return false
-    end
-    
-    -- Calculate origin: world_origin = world_current - relative_current
-    setGPSOrigin(wx - rx, wy - ry, wz - rz)
-    flex.send("GPS enabled: Origin at ("..gps_origin_x..","..gps_origin_y..","..gps_origin_z..")", colors.green)
-    flex.send("Current world position: ("..wx..","..wy..","..wz..")", colors.lightGray)
-    return true
-  else
-    flex.send("GPS not available, using relative coordinates only", colors.yellow)
-    return false
-  end
-end
-
--- Verify and correct position using GPS
-function verifyPositionGPS(tolerance)
-  if not gps_enabled then return false end
-  
-  -- Default tolerance: only correct if more than 1 block off
-  -- This prevents minor GPS fluctuations from causing false corrections
-  tolerance = tolerance or 1
-  
-  local wx, wy, wz = getGPSPosition(3)
-  if not wx then
-    flex.send("GPS position check failed", colors.orange)
-    return false
-  end
-  
-  -- Calculate what our relative position should be based on GPS
-  local gps_rx, gps_ry, gps_rz = worldToRelative(wx, wy, wz)
-  
-  -- Round to nearest integer (GPS can have sub-block precision)
-  gps_rx = math.floor(gps_rx + 0.5)
-  gps_ry = math.floor(gps_ry + 0.5)
-  gps_rz = math.floor(gps_rz + 0.5)
-  
-  -- Check if there's a significant discrepancy
-  local dx = math.abs(gps_rx - xdist)
-  local dy = math.abs(gps_ry - ydist)
-  local dz = math.abs(gps_rz - zdist)
-  
-  -- Only correct if difference exceeds tolerance
-  if dx > tolerance or dy > tolerance or dz > tolerance then
-    flex.send("GPS correction detected: Δ=("..dx..","..dy..","..dz..")", colors.orange)
-    flex.send("Position: ("..xdist..","..ydist..","..zdist..") -> ("..gps_rx..","..gps_ry..","..gps_rz..")", colors.orange)
-    xdist = gps_rx
-    ydist = gps_ry
-    zdist = gps_rz
-    
-    -- Update min/max bounds if necessary
-    if xdist < xmin then xmin = xdist end
-    if xdist > xmax then xmax = xdist end
-    if ydist < ymin then ymin = ydist end
-    if ydist > ymax then ymax = ydist end
-    if zdist < zmin then zmin = zdist end
-    if zdist > zmax then zmax = zdist end
-    
-    saveCoords()
-    return true
-  end
-  
-  return false
-end
-
--- Establish GPS origin when resuming without prior GPS data
--- This should be called when at origin (0,0,0)
-function establishGPSAtOrigin()
-  if gps_enabled then
-    flex.send("GPS already enabled", colors.cyan)
-    return true
-  end
-  
-  -- Verify we're at origin
-  if xdist ~= 0 or ydist ~= 0 or zdist ~= 0 then
-    flex.send("Must be at origin (0,0,0) to establish GPS. Currently at: ("..xdist..","..ydist..","..zdist..")", colors.red)
-    return false
-  end
-  
-  local wx, wy, wz = getGPSPosition(3)
-  if wx then
-    -- At origin, so world coords = origin coords
-    setGPSOrigin(wx, wy, wz)
-    flex.send("GPS established at origin: ("..wx..","..wy..","..wz..")", colors.green)
-    return true
-  else
-    flex.send("GPS signal not found", colors.red)
-    return false
-  end
-end
-
--- Attempt to recover position after chunk unload
-function recoverPositionGPS()
-  if not gps_enabled then
-    flex.send("No GPS available for position recovery", colors.yellow)
-    return false
-  end
-  
-  local wx, wy, wz = getGPSPosition(5)
-  if not wx then
-    flex.send("GPS recovery failed - no signal", colors.red)
-    return false
-  end
-  
-  -- Calculate relative position from GPS
-  local new_x, new_y, new_z = worldToRelative(wx, wy, wz)
-  
-  -- Round to nearest integer (GPS has sub-block precision)
-  new_x = math.floor(new_x + 0.5)
-  new_y = math.floor(new_y + 0.5)
-  new_z = math.floor(new_z + 0.5)
-  
-  flex.send("GPS recovery: Position corrected from ("..xdist..","..ydist..","..zdist..") to ("..new_x..","..new_y..","..new_z..")", colors.green)
-  
-  xdist = new_x
-  ydist = new_y
-  zdist = new_z
-  
-  -- Update min/max if needed
-  if xdist < xmin then xmin = xdist end
-  if xdist > xmax then xmax = xdist end
-  if ydist < ymin then ymin = ydist end
-  if ydist > ymax then ymax = ydist end
-  if zdist < zmin then zmin = zdist end
-  if zdist > zmax then zmax = zdist end
-  
-  saveCoords()
-  return true
-end
-
 
 -------------------------------------------
 --||   /¯\\  /\\ |¯\\   ///¯¯\\ /\\ ||  |||¯¯]--
@@ -626,8 +438,7 @@ function location()
     xmin, xmax, ymin, ymax, zmin, zmax,
     xlast, ylast, zlast, rlast,
     lastmove, dugtotal,
-    blocks_processed_total, -- Added: Include blocks_processed_total
-    gps_origin_x, gps_origin_y, gps_origin_z, gps_enabled -- GPS data
+    blocks_processed_total -- Added: Include blocks_processed_total
      }
 end
 
@@ -685,63 +496,10 @@ function loadCoords(save)
   dugtotal = tonumber(file.readLine() or dugtotal)
   -- Added: Load blocks_processed_total from the save file
   blocks_processed_total = tonumber(file.readLine() or blocks_processed_total)
-  
-  -- Load GPS data (if available in save file)
-  local gps_x_str = file.readLine()
-  local gps_y_str = file.readLine()
-  local gps_z_str = file.readLine()
-  local gps_en_str = file.readLine()
-  
-  if gps_x_str and gps_x_str ~= "nil" then
-    gps_origin_x = tonumber(gps_x_str)
-  end
-  if gps_y_str and gps_y_str ~= "nil" then
-    gps_origin_y = tonumber(gps_y_str)
-  end
-  if gps_z_str and gps_z_str ~= "nil" then
-    gps_origin_z = tonumber(gps_z_str)
-  end
-  if gps_en_str then
-    gps_enabled = (gps_en_str == "true")
-  end
-  
+
+  -- Ensure all lines are read if the file format changed
+  -- while file.readLine() ~= nil do end -- Read and discard any extra lines
   file.close()
-  
-  -- After loading, handle GPS
-  if gps_enabled then
-    flex.send("GPS origin loaded: ("..tostring(gps_origin_x)..","..tostring(gps_origin_y)..","..tostring(gps_origin_z)..")", colors.green)
-    -- Try to verify position with GPS
-    local wx, wy, wz = getGPSPosition(3)
-    if wx then
-      local gps_rx, gps_ry, gps_rz = worldToRelative(wx, wy, wz)
-      -- Round to nearest integer
-      gps_rx = math.floor(gps_rx + 0.5)
-      gps_ry = math.floor(gps_ry + 0.5)
-      gps_rz = math.floor(gps_rz + 0.5)
-      
-      local dx = math.abs(gps_rx - xdist)
-      local dy = math.abs(gps_ry - ydist)
-      local dz = math.abs(gps_rz - zdist)
-      
-      -- Only correct if difference is more than 1 block (chunk unload scenario)
-      if dx > 1 or dy > 1 or dz > 1 then
-        flex.send("Position mismatch detected! Correcting...", colors.orange)
-        recoverPositionGPS()
-      else
-        flex.send("GPS position verified", colors.green)
-      end
-    else
-      flex.send("GPS signal not found, using saved position", colors.yellow)
-    end
-  else
-    -- No GPS was saved, but maybe GPS is available now
-    local wx, wy, wz = getGPSPosition(2)
-    if wx then
-      flex.send("GPS now available but origin not set", colors.cyan)
-      flex.send("Will establish GPS after returning to origin", colors.cyan)
-    end
-  end
-  
   return true
 
   else
