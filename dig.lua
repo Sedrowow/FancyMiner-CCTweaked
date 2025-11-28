@@ -124,7 +124,7 @@ function doDump(z)
     blockCount = blockCount - 1
     end --if
 
-    if blockCount <= 0 then
+    if blockCount > 0 then
     if z == "fwd" then
       turtle.drop()
     elseif z == "down" then
