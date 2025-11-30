@@ -369,45 +369,8 @@ local function initializeWorker()
                         end
                     end
 
-                    -- Serpentine mining function: forward = zone length (z), lateral = zone width (x)
-                    local function mineZone()
-                        local zmin, zmax = config.zone.zmin, config.zone.zmax
-                        local xmin, xmax = config.zone.xmin, config.zone.xmax
-                        local length = (zmax - zmin + 1)   -- forward distance per row
-                        local width = (xmax - xmin + 1)    -- number of columns to traverse
-                        local forward = facing or message.initial_direction or "east"
-                        
-                        face(forward)
-                        logger.log("Starting serpentine mine: " .. width .. " columns x " .. length .. " length, facing " .. forward)
-                        
-                        local goForward = true
-                        for col = 1, width do
-                            logger.log("Column " .. col .. "/" .. width .. "; length=" .. length .. " (forward=" .. tostring(goForward) .. ")")
-                            
-                            if goForward then
-                                for i = 1, length do 
-                                    stepForward() 
-                                end
-                            else
-                                for i = 1, length do 
-                                    stepBack() 
-                                end
-                            end
-                            
-                            -- Move laterally to next column (except after last)
-                            if col < width then
-                                local side = ((forward == "east" or forward == "south") and "left" or "right")
-                                lateralStep(side)
-                                face(forward)
-                                goForward = not goForward
-                            end
-                        end
-                        
-                        logger.log("Mining complete!")
-                    end
-                    
-                    -- Store for later invocation on start signal
-                    config.mineZone = mineZone
+                    -- Store desired facing for later use (not the function itself)
+                    config.desiredFacing = facing or message.initial_direction or "east"
                 end
             end
         end
@@ -541,13 +504,105 @@ if config.isCoordinated then
         end
     end
     
-    -- Use the new serpentine mining function defined during init
+    -- Serpentine mining function: forward = zone length (z), lateral = zone width (x)
     local function mineQuarry()
-        if config.mineZone then
-            config.mineZone()
-        else
-            logger.error("mineZone function not initialized!")
+        local zmin, zmax = config.zone.zmin, config.zone.zmax
+        local xmin, xmax = config.zone.xmin, config.zone.xmax
+        local length = (zmax - zmin + 1)   -- forward distance per row
+        local width = (xmax - xmin + 1)    -- number of columns to traverse
+        local forward = config.desiredFacing or "east"
+        
+        -- Helper functions for movement
+        local function face(dir)
+            if gpsNav.faceDirection then 
+                gpsNav.faceDirection(dir) 
+            else
+                local order = {north=1,east=2,south=3,west=4}
+                local ci, ti = order[dig.getCardinalDir() or dir], order[dir]
+                if ci and ti then
+                    local diff = (ti - ci) % 4
+                    if diff == 1 then dig.right(1) 
+                    elseif diff == 2 then dig.right(2) 
+                    elseif diff == 3 then dig.left(1) 
+                    end
+                end
+            end
+            dig.setCardinalDir(dir)
         end
+
+        local function stepForward()
+            if config.aborted then return false end
+            checkFuel()
+            checkInv()
+            if not turtle.forward() then 
+                turtle.dig()
+                if not turtle.forward() then return false end
+            end
+            return true
+        end
+        
+        local function stepBack()
+            if config.aborted then return false end
+            if not turtle.back() then 
+                dig.right(2)
+                if not stepForward() then 
+                    dig.right(2)
+                    return false
+                end
+                dig.right(2) 
+            end
+            return true
+        end
+        
+        local function lateralStep(side)
+            if config.aborted then return false end
+            if side == "left" then 
+                dig.left(1)
+                if not stepForward() then 
+                    dig.right(1)
+                    return false
+                end
+                dig.right(1) 
+            else 
+                dig.right(1)
+                if not stepForward() then 
+                    dig.left(1)
+                    return false
+                end
+                dig.left(1) 
+            end
+            return true
+        end
+        
+        face(forward)
+        logger.log("Starting serpentine mine: " .. width .. " columns x " .. length .. " length, facing " .. forward)
+        
+        local goForward = true
+        for col = 1, width do
+            if config.aborted then return end
+            
+            logger.log("Column " .. col .. "/" .. width .. "; length=" .. length .. " (forward=" .. tostring(goForward) .. ")")
+            
+            if goForward then
+                for i = 1, length do 
+                    if not stepForward() then return end
+                end
+            else
+                for i = 1, length do 
+                    if not stepBack() then return end
+                end
+            end
+            
+            -- Move laterally to next column (except after last)
+            if col < width then
+                local side = ((forward == "east" or forward == "south") and "left" or "right")
+                if not lateralStep(side) then return end
+                face(forward)
+                goForward = not goForward
+            end
+        end
+        
+        logger.log("Mining complete!")
     end
     
     -- Run the actual quarry operation with abort handling
