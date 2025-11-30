@@ -354,12 +354,17 @@ local function initializeWorker()
                     os.cancelTimer(initTimeout)
                     
                     -- Send ready signal to server
-                    logger.log("Sending worker_ready signal to server...")
-                    modem.transmit(config.serverChannel, config.serverChannel, {
-                        type = "worker_ready",
-                        turtle_id = config.turtleID
-                    })
-                    logger.log("worker_ready signal sent!")
+                    logger.log("Sending worker_ready signal to server on channel " .. config.serverChannel)
+                    logger.log("Modem available: " .. tostring(modem ~= nil))
+                    if modem then
+                        modem.transmit(config.serverChannel, config.serverChannel, {
+                            type = "worker_ready",
+                            turtle_id = config.turtleID
+                        })
+                        logger.log("worker_ready signal transmitted successfully!")
+                    else
+                        logger.error("ERROR: Modem is nil, cannot send ready signal!")
+                    end
                     sleep(0.1)  -- Brief delay to ensure message transmission
                 end
             end
