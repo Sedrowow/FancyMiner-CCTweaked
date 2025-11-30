@@ -207,19 +207,30 @@ local function initializeWorker()
                     local function probeFacing()
                         local pos1 = gpsUtils.getGPS(4)
                         if not pos1 then return end
-                        -- attempt forward (dig if needed)
-                        local moved = false
-                        if turtle.forward() then
-                            moved = true
-                        else
-                            turtle.dig()
-                            if turtle.forward() then moved = true end
+                        local moved, turns = false, 0
+                        -- Try up to 4 orientations to find a free forward move
+                        for i=1,4 do
+                            if turtle.forward() then
+                                moved = true
+                                break
+                            else
+                                turtle.dig()
+                                if turtle.forward() then moved = true break end
+                                turtle.turnRight(); turns = turns + 1
+                            end
                         end
                         local pos2 = gpsUtils.getGPS(4)
                         if moved then turtle.back() end
+                        -- Restore original rotation
+                        for i=1,turns do turtle.turnLeft() end
+
                         if not (pos1 and pos2) then return end
                         local dx = pos2.x - pos1.x
                         local dz = pos2.z - pos1.z
+                        if math.abs(dx) < 0.4 and math.abs(dz) < 0.4 then
+                            logger.warn("Probe could not detect movement; keeping previous facing")
+                            return
+                        end
                         local dir
                         if math.abs(dx) > math.abs(dz) then
                             dir = (dx > 0) and "east" or "west"

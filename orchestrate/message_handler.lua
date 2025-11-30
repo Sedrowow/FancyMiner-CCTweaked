@@ -71,11 +71,9 @@ local function handleChestPositions(modem, serverChannel, state, message)
         state.chestPositions.output
     )
 
+    print("Calculated initial direction: " .. initialDirection)
     if state.deployerFacing then
-        print("Override: using deployer_facing (" .. state.deployerFacing .. ") instead of chest-derived (" .. initialDirection .. ")")
-        initialDirection = state.deployerFacing
-    else
-        print("Calculated initial direction: " .. initialDirection)
+        print("Deployer facing override present: will use for mining facing, zones still based on chests")
     end
     
     local gpsZones, err = ZoneManager.createGPSZones(state.zones, startGPS, initialDirection)
@@ -268,11 +266,16 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
         
         print("  Using initial direction: " .. initialDirection)
 
-        -- Derive desired facing for forward mining: one direction to the LEFT of chest direction
-        -- Rationale: chests are placed along the side of the quarry; mining should proceed
-        -- perpendicular to that side, to the left.
-        local rotateLeft = { north = "west", west = "south", south = "east", east = "north" }
-        local desiredFacing = rotateLeft[initialDirection] or initialDirection
+        -- Choose mining facing: if user provided deployerFacing, use it directly.
+        -- Otherwise, derive as one-left of chest direction.
+        local desiredFacing
+        if state.deployerFacing then
+            desiredFacing = state.deployerFacing
+            print("  Using deployer override for desired facing: " .. desiredFacing)
+        else
+            local rotateLeft = { north = "west", west = "south", south = "east", east = "north" }
+            desiredFacing = rotateLeft[initialDirection] or initialDirection
+        end
         print("  Computed desired facing for mining: " .. desiredFacing)
         
         state.workers[turtleID].zone_index = matchedZone
