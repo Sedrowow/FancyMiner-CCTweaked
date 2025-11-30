@@ -371,13 +371,35 @@ local function initializeWorker()
         end
     end
     
-    -- Wait for start signal
+    -- Wait for start signal with periodic ready signal resend
     logger.log("Waiting for start signal...")
-    communication.waitForStartSignal(modem)
-    logger.log("Start signal received!")
-    config.miningStarted = true
-    saveState()
-    sendStatusUpdate("mining")
+    local readyResendTimer = os.startTimer(5)  -- Resend every 5 seconds
+    while true do
+        local event, p1, p2, p3, p4, p5 = os.pullEvent()
+        
+        if event == "timer" and p1 == readyResendTimer then
+            -- Resend ready signal in case it was missed
+            logger.log("Resending worker_ready signal...")
+            if modem then
+                modem.transmit(config.serverChannel, config.serverChannel, {
+                    type = "worker_ready",
+                    turtle_id = config.turtleID
+                })
+            end
+            readyResendTimer = os.startTimer(5)
+            
+        elseif event == "modem_message" then
+            local side, channel, replyChannel, message = p1, p2, p3, p4
+            if type(message) == "table" and message.type == "start_mining" then
+                logger.log("Start signal received!")
+                os.cancelTimer(readyResendTimer)
+                config.miningStarted = true
+                saveState()
+                sendStatusUpdate("mining")
+                break
+            end
+        end
+    end
 end
 
 -- Modified inventory check for coordinated mode
