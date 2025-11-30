@@ -204,9 +204,13 @@ local function initializeWorker()
                     gpsNav.init(true)
 
                     -- Calibrate actual physical facing by short forward/back probe
+                    logger.log("Starting GPS facing probe...")
                     local function probeFacing()
                         local pos1 = gpsUtils.getGPS(4)
-                        if not pos1 then return end
+                        if not pos1 then 
+                            logger.warn("Probe: Could not get initial GPS position")
+                            return 
+                        end
                         local moved, turns = false, 0
                         -- Try up to 4 orientations to find a free forward move
 
@@ -238,17 +242,25 @@ local function initializeWorker()
                                 logger.log("Probe: forcibly moved forward after digging")
                             else
                                 logger.error("Probe: all movement attempts failed, facing detection skipped")
+                                return
                             end
                         end
                         if moved then sleep(0.3) end
                         local pos2 = gpsUtils.getGPS(4)
-                        if moved then turtle.back() sleep(0.2) end
+                        if moved then 
+                            turtle.back() 
+                            sleep(0.2) 
+                        end
                         -- Restore original rotation
                         for i=1,turns do turtle.turnLeft() end
 
-                        if not (pos1 and pos2) then return end
+                        if not (pos1 and pos2) then 
+                            logger.warn("Probe: Could not get GPS positions for comparison")
+                            return 
+                        end
                         local dx = pos2.x - pos1.x
                         local dz = pos2.z - pos1.z
+                        logger.log("Probe: GPS delta - dx=" .. dx .. ", dz=" .. dz)
                         if math.abs(dx) < 0.4 and math.abs(dz) < 0.4 then
                             logger.warn("Probe could not detect movement; keeping previous facing")
                             return
@@ -264,21 +276,36 @@ local function initializeWorker()
                             logger.log("Probe determined current facing: " .. dir)
                         end
                     end
-                    if not dig.getCardinalDir() then probeFacing() end
+                    if not dig.getCardinalDir() then 
+                        probeFacing() 
+                        logger.log("GPS facing probe completed")
+                    else
+                        logger.log("Skipping GPS probe - cardinal direction already set")
+                    end
 
                     -- Handle orientation: desired_facing indicates the cardinal we want turtle to face physically.
+                    logger.log("Starting orientation calibration...")
                     local facing = message.desired_facing or message.initial_direction
                     if facing then
                         logger.log("Desired facing: " .. tostring(facing))
                         -- Ensure cardinalDir is set (calibrated) and rotate to target via GPS-aware turns
                         local usedGPS = false
-                        if gpsNav.faceDirection and gpsNav.faceDirection(facing) then
-                            usedGPS = true
-                            logger.log("Facing set to " .. facing .. " using GPS navigation")
+                        if gpsNav.faceDirection then
+                            logger.log("Attempting GPS-based rotation to " .. facing)
+                            local success = gpsNav.faceDirection(facing)
+                            if success then
+                                usedGPS = true
+                                logger.log("Facing set to " .. facing .. " using GPS navigation")
+                            else
+                                logger.warn("GPS rotation failed, will use manual correction")
+                            end
+                        else
+                            logger.warn("gpsNav.faceDirection not available")
                         end
 
                         -- Verify and correct if mismatch
                         local current = dig.getCardinalDir()
+                        logger.log("Current cardinal direction: " .. tostring(current))
                         if not current then
                             -- Fallback: assume desired_facing if probe failed
                             dig.setCardinalDir(facing)
@@ -286,6 +313,7 @@ local function initializeWorker()
                             logger.log("Fallback: assuming desired facing due to probe failure")
                         end
                         if current ~= facing then
+                            logger.log("Correcting facing from " .. current .. " to " .. facing)
                             local order = {north=1,east=2,south=3,west=4}
                             local ci, ti = order[current], order[facing]
                             if ci and ti then
@@ -297,11 +325,15 @@ local function initializeWorker()
                                 current = dig.getCardinalDir()
                             else
                                 -- Absolute last resort: spin until success
+                                logger.warn("Manual rotation correction needed")
                                 for _=1,4 do if dig.getCardinalDir()==facing then break end dig.left(1) end
                                 current = dig.getCardinalDir()
                             end
                             logger.log("Post-correction facing (gps=" .. tostring(usedGPS) .. ") now=" .. tostring(current))
+                        else
+                            logger.log("Facing already correct: " .. facing)
                         end
+                        logger.log("Orientation calibration complete!")
                     else
                         logger.warn("No facing information provided by server")
                     end
@@ -315,64 +347,20 @@ local function initializeWorker()
                     logger.log("  Output: " .. gpsUtils.formatGPS(config.chestGPS.output))
                     logger.log("  Fuel: " .. gpsUtils.formatGPS(config.chestGPS.fuel))
                     
+                    -- Store desired facing for later use
+                    config.desiredFacing = facing or message.initial_direction or "east"
+                    
                     gotAssignment = true
                     os.cancelTimer(initTimeout)
                     
-                    -- Send ready signal
+                    -- Send ready signal to server
+                    logger.log("Sending worker_ready signal to server...")
                     modem.transmit(config.serverChannel, config.serverChannel, {
                         type = "worker_ready",
                         turtle_id = config.turtleID
                     })
-                    logger.log("Sent worker_ready signal to server")
+                    logger.log("worker_ready signal sent!")
                     sleep(0.1)  -- Brief delay to ensure message transmission
-                    
-                    -- Define serpentine mining helpers
-                    local function face(dir)
-                        if gpsNav.faceDirection then 
-                            gpsNav.faceDirection(dir) 
-                        else
-                            local order = {north=1,east=2,south=3,west=4}
-                            local ci, ti = order[dig.getCardinalDir() or dir], order[dir]
-                            if ci and ti then
-                                local diff = (ti - ci) % 4
-                                if diff == 1 then dig.right(1) 
-                                elseif diff == 2 then dig.right(2) 
-                                elseif diff == 3 then dig.left(1) 
-                                end
-                            end
-                        end
-                        dig.setCardinalDir(dir)
-                    end
-
-                    local function stepForward()
-                        if not turtle.forward() then 
-                            turtle.dig()
-                            turtle.forward() 
-                        end
-                    end
-                    
-                    local function stepBack()
-                        if not turtle.back() then 
-                            dig.right(2)
-                            stepForward()
-                            dig.right(2) 
-                        end
-                    end
-                    
-                    local function lateralStep(side)
-                        if side == "left" then 
-                            dig.left(1)
-                            stepForward()
-                            dig.right(1) 
-                        else 
-                            dig.right(1)
-                            stepForward()
-                            dig.left(1) 
-                        end
-                    end
-
-                    -- Store desired facing for later use (not the function itself)
-                    config.desiredFacing = facing or message.initial_direction or "east"
                 end
             end
         end
