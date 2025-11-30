@@ -4,13 +4,42 @@
 local COMPONENT_TYPE = "COMPONENT_TYPE_PLACEHOLDER"  -- Will be replaced by setup script
 local REPO_RAW_BASE = 'https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/aaaa/'
 
+local function trim(s)
+    if not s then return s end
+    return (s:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function parseVersion(str)
+    local parts = {}
+    if not str then return parts end
+    for token in str:gmatch("[^%.]+") do
+        parts[#parts+1] = tonumber(token) or token
+    end
+    return parts
+end
+
+local function compareVersions(a, b)
+    -- Return 1 if a>b, -1 if a<b, 0 if equal
+    for i = 1, math.max(#a, #b) do
+        local av = a[i] or 0
+        local bv = b[i] or 0
+        if type(av) == "number" and type(bv) == "number" then
+            if av > bv then return 1 elseif av < bv then return -1 end
+        else
+            av, bv = tostring(av), tostring(bv)
+            if av > bv then return 1 elseif av < bv then return -1 end
+        end
+    end
+    return 0
+end
+
 local function checkVersion()
     print("Checking for updates...")
-    
+
     local versionUrl = REPO_RAW_BASE .. 'version.txt'
     fs.delete('.remote_version.txt')
     shell.run('wget', versionUrl, '.remote_version.txt', '-f')
-    
+
     local remoteVersion = nil
     if fs.exists('.remote_version.txt') then
         local f = fs.open('.remote_version.txt', 'r')
@@ -18,15 +47,22 @@ local function checkVersion()
         f.close()
         fs.delete('.remote_version.txt')
     end
-    
+
     local localVersion = nil
     if fs.exists('.local_version.txt') then
         local f = fs.open('.local_version.txt', 'r')
         localVersion = f.readAll()
         f.close()
     end
-    
-    if remoteVersion and remoteVersion ~= localVersion then
+
+    remoteVersion = trim(remoteVersion)
+    localVersion = trim(localVersion)
+
+    local remoteParts = parseVersion(remoteVersion)
+    local localParts = parseVersion(localVersion)
+    local cmp = compareVersions(remoteParts, localParts)
+
+    if remoteVersion and (remoteVersion ~= localVersion or cmp == 1) then
         print('New version detected: ' .. remoteVersion)
         print('Current version: ' .. (localVersion or 'none'))
         print('Updating ' .. COMPONENT_TYPE .. '...')
@@ -133,6 +169,9 @@ local function checkVersion()
         return true
     else
         print('Already on latest version: ' .. (localVersion or remoteVersion or 'unknown'))
+        if remoteVersion and cmp == 1 then
+            print('NOTE: Version parsing indicates remote is newer but strings matched; check formatting.')
+        end
     end
     
     return false

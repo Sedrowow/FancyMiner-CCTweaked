@@ -37,7 +37,13 @@ end
 
 function Log.init(path)
     if path then logPath = path end
-    append('=== Log started at ' .. textutils.formatTime(os.time(),'24h') .. ' ===')
+    local okTime = 'unknown'
+    local success, formatted = pcall(function()
+        -- textutils.formatTime: second param = showSeconds (boolean)
+        return textutils.formatTime(os.time(), true)
+    end)
+    if success and formatted then okTime = formatted end
+    append('=== Log started at ' .. okTime .. ' ===')
 end
 
 function Log.write(line)
