@@ -84,15 +84,14 @@ function ZoneManager.createGPSZones(zones, startGPS, initialDirection)
         elseif initialDirection == "west" then
             -- Deployer faces west (-X), workers face east (+X)
             -- Deployer's right (dig.lua +X) is north (-Z GPS)
-            -- Workers are physically deployed along dig.lua +X (width axis).
-            -- Previous implementation incorrectly mapped width (zone.x) to GPS Z and length (zone.z) to GPS X,
-            -- causing all west-facing workers to fall inside the first zone's Z range (duplicate zone assignment).
-            -- Fix: Map width (zone.x) to the GPS X axis (negative direction for west) and length (zone.z) to GPS Z (negative for north).
-            -- Width (dig +X) -> GPS -X; Length (dig +Z) -> GPS -Z
-            gps_xmin = startGPS.x - zone.xmax
-            gps_xmax = startGPS.x - zone.xmin
-            gps_zmin = startGPS.z - zone.zmax
-            gps_zmax = startGPS.z - zone.zmin
+            -- Mapping for WEST:
+            --   dig +X (width across workers) -> GPS -Z
+            --   dig +Z (length/depth forward) -> GPS -X
+            -- Therefore, X bounds come from zone.z and Z bounds come from zone.x.
+            gps_xmin = startGPS.x - zone.zmax
+            gps_xmax = startGPS.x - zone.zmin
+            gps_zmin = startGPS.z - zone.xmax
+            gps_zmax = startGPS.z - zone.xmin
         else
             return nil, "Invalid initialDirection: " .. tostring(initialDirection)
         end
