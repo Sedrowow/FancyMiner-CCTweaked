@@ -86,7 +86,8 @@ end
 
 -- Send deployment request to server
 -- Returns: true on success
-function M.sendDeployRequest(modem, serverChannel, deployerID, numWorkers, quarryParams)
+-- Optional parameter deployerFacing: cardinal direction the deployer computer is physically facing
+function M.sendDeployRequest(modem, serverChannel, deployerID, numWorkers, quarryParams, deployerFacing)
     print("\nContacting server...")
     
     M.sendMessage(modem, serverChannel, {
@@ -94,7 +95,8 @@ function M.sendDeployRequest(modem, serverChannel, deployerID, numWorkers, quarr
         deployer_id = deployerID,
         num_workers = numWorkers,
         is_deployer = true,
-        quarry_params = quarryParams
+        quarry_params = quarryParams,
+        deployer_facing = deployerFacing -- may be nil
     })
     
     return true

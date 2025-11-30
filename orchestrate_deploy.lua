@@ -77,9 +77,25 @@ local function deploy()
     -- Get quarry parameters from user
     local quarryParams = communication.getQuarryParams()
     
+    -- Optional: get deployer facing from user to override chest-derived direction
+    print("Enter deployer facing (N/E/S/W) or press Enter for auto (by chests):")
+    local facingInput = read()
+    local deployerFacing = nil
+    if facingInput and #facingInput > 0 then
+        local inp = string.lower((facingInput or ""):gsub("%s+",""))
+        local map = { n = "north", e = "east", s = "south", w = "west",
+                      north = "north", east = "east", south = "south", west = "west" }
+        deployerFacing = map[inp]
+        if deployerFacing then
+            print("Using deployer facing override: " .. deployerFacing)
+        else
+            print("Invalid facing input; continuing with auto-detected by chests")
+        end
+    end
+    
     -- Send deployment request to server
     local numWorkers = #turtleSlots + 1  -- +1 for deployer itself
-    communication.sendDeployRequest(modem, SERVER_CHANNEL, state.deployerID, numWorkers, quarryParams)
+    communication.sendDeployRequest(modem, SERVER_CHANNEL, state.deployerID, numWorkers, quarryParams, deployerFacing)
     
     -- Wait for zone assignments from server
     local zones, numWorkers, serverChannel = communication.waitForDeployCommand(modem)

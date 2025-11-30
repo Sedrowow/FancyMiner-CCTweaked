@@ -39,8 +39,12 @@ local function handleDeployRequest(modem, serverChannel, broadcastChannel, state
         quarry = message.quarry_params
     })
     
+    state.deployerFacing = message.deployer_facing -- optional explicit facing
     print("Deployment initiated for " .. message.num_workers .. " workers")
     print("Calculated " .. #zones .. " zones")
+    if state.deployerFacing then
+        print("Deployer facing override received: " .. tostring(state.deployerFacing))
+    end
     return true
 end
 
@@ -66,8 +70,13 @@ local function handleChestPositions(modem, serverChannel, state, message)
         state.chestPositions.fuel,
         state.chestPositions.output
     )
-    
-    print("Calculated initial direction: " .. initialDirection)
+
+    if state.deployerFacing then
+        print("Override: using deployer_facing (" .. state.deployerFacing .. ") instead of chest-derived (" .. initialDirection .. ")")
+        initialDirection = state.deployerFacing
+    else
+        print("Calculated initial direction: " .. initialDirection)
+    end
     
     local gpsZones, err = ZoneManager.createGPSZones(state.zones, startGPS, initialDirection)
     if not gpsZones then
@@ -259,10 +268,11 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
         
         print("  Using initial direction: " .. initialDirection)
 
-        -- Derive desired facing for forward mining (dig.lua forward = +Z local = quarry length axis)
-        -- initialDirection maps dig +X; we rotate 90 degrees clockwise to get dig +Z mapping for mining
-        local rotateClockwise = { north = "east", east = "south", south = "west", west = "north" }
-        local desiredFacing = rotateClockwise[initialDirection] or initialDirection
+        -- Derive desired facing for forward mining: one direction to the LEFT of chest direction
+        -- Rationale: chests are placed along the side of the quarry; mining should proceed
+        -- perpendicular to that side, to the left.
+        local rotateLeft = { north = "west", west = "south", south = "east", east = "north" }
+        local desiredFacing = rotateLeft[initialDirection] or initialDirection
         print("  Computed desired facing for mining: " .. desiredFacing)
         
         state.workers[turtleID].zone_index = matchedZone
