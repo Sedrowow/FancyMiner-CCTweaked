@@ -210,9 +210,13 @@ local function initializeWorker()
                         local moved, turns = false, 0
                         -- Try up to 4 orientations to find a free forward move
 
+                        local triedDirs = {}
                         for i=1,4 do
+                            local dir = ({"front","right","back","left"})[i]
+                            table.insert(triedDirs, dir)
                             if turtle.forward() then
                                 moved = true
+                                logger.log("Probe: moved forward in direction " .. dir)
                                 break
                             else
                                 if turtle.dig() then
@@ -220,14 +224,23 @@ local function initializeWorker()
                                 end
                                 if turtle.forward() then
                                     moved = true
+                                    logger.log("Probe: dug and moved forward in direction " .. dir)
                                     break
                                 end
                                 turtle.turnRight(); turns = turns + 1
                             end
                         end
-                        if moved then
-                            sleep(0.3)
+                        if not moved then
+                            logger.warn("Probe: could not move in any direction (tried: " .. table.concat(triedDirs,", ") .. ") - forcing forward dig/move")
+                            if turtle.dig() then sleep(0.2) end
+                            if turtle.forward() then
+                                moved = true
+                                logger.log("Probe: forcibly moved forward after digging")
+                            else
+                                logger.error("Probe: all movement attempts failed, facing detection skipped")
+                            end
                         end
+                        if moved then sleep(0.3) end
                         local pos2 = gpsUtils.getGPS(4)
                         if moved then turtle.back() sleep(0.2) end
                         -- Restore original rotation

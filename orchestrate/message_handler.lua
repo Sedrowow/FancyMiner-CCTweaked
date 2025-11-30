@@ -324,11 +324,18 @@ local function handleWorkerReady(modem, serverChannel, broadcastChannel, state, 
     if not wasReady then
         state.readyCount = state.readyCount + 1
     end
-    
+
     state.workers[turtleID].status = "ready"
-    
+
+    -- Recalculate readyCount from all workers with status == "ready"
+    local actualReady = 0
+    for id, w in pairs(state.workers) do
+        if w.status == "ready" then actualReady = actualReady + 1 end
+    end
+    state.readyCount = actualReady
+
     print("Worker " .. turtleID .. " ready (" .. state.readyCount .. "/" .. state.totalWorkers .. ")")
-    
+
     -- Start mining when all workers ready
     if state.readyCount >= state.totalWorkers and not state.miningStarted then
         state.miningStarted = true
