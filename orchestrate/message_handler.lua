@@ -214,16 +214,38 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
         print("  Checking zone " .. matchedZone .. ": X[" .. gpsZone.gps_xmin .. "-" .. gpsZone.gps_xmax .. "] Z[" .. gpsZone.gps_zmin .. "-" .. gpsZone.gps_zmax .. "]")
         
         if gpsZone.assigned then
-            print("  ERROR: Zone " .. matchedZone .. " already assigned to turtle " .. gpsZone.turtle_id)
-            print("  Cannot assign multiple workers to same zone!")
-            print("  Turtle " .. turtleID .. " must be repositioned.")
-            
-            modem.transmit(serverChannel, serverChannel, {
-                type = "assignment_error",
-                turtle_id = turtleID,
-                error = "Zone already assigned. Reposition turtle and try again."
-            })
-            return false
+            -- Special handling: Workers placed on the start edge (same X as startGPS)
+            -- often queue up along Z but share the same X, which all maps to zone 1.
+            -- If the worker stands on the start X edge, assign the first unassigned
+            -- zone whose Z range contains the worker, ignoring X.
+            local startGPS = state.chestPositions and state.chestPositions.start
+            local assignedIndex = nil
+            if startGPS and workerGPS.x == startGPS.x then
+                for i = 1, #state.gpsZones do
+                    local zc = state.gpsZones[i]
+                    if not zc.assigned and workerGPS.z >= zc.gps_zmin and workerGPS.z <= zc.gps_zmax then
+                        assignedIndex = i
+                        gpsZone = zc
+                        break
+                    end
+                end
+            end
+
+            if not assignedIndex then
+                print("  ERROR: Zone " .. matchedZone .. " already assigned to turtle " .. gpsZone.turtle_id)
+                print("  Cannot assign multiple workers to same zone!")
+                print("  Turtle " .. turtleID .. " must be repositioned.")
+                
+                modem.transmit(serverChannel, serverChannel, {
+                    type = "assignment_error",
+                    turtle_id = turtleID,
+                    error = "Zone already assigned. Reposition turtle and try again."
+                })
+                return false
+            else
+                print("  Start-edge placement detected; assigning next free zone " .. assignedIndex .. " by Z range")
+                matchedZone = assignedIndex
+            end
         end
         
         gpsZone.assigned = true

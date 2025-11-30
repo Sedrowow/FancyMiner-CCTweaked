@@ -236,27 +236,32 @@ local function initializeWorker()
                     -- Handle orientation: desired_facing indicates the cardinal we want turtle to face physically.
                     local facing = message.desired_facing or message.initial_direction
                     if facing then
+                        logger.log("Desired facing: " .. tostring(facing))
                         -- Ensure cardinalDir is set (calibrated) and rotate to target via GPS-aware turns
+                        local usedGPS = false
                         if gpsNav.faceDirection and gpsNav.faceDirection(facing) then
+                            usedGPS = true
                             logger.log("Facing set to " .. facing .. " using GPS navigation")
-                        else
-                            -- If calibration or helper failed, compute minimal turns manually
-                            local current = dig.getCardinalDir()
-                            if current then
-                                local order = {north=1,east=2,south=3,west=4}
-                                local ci, ti = order[current], order[facing]
-                                if ci and ti then
-                                    local diff = (ti - ci) % 4
-                                    if diff == 1 then dig.right(1)
-                                    elseif diff == 2 then dig.right(2)
-                                    elseif diff == 3 then dig.left(1)
-                                    end
+                        end
+
+                        -- Verify and correct if mismatch
+                        local current = dig.getCardinalDir()
+                        if current ~= facing then
+                            local order = {north=1,east=2,south=3,west=4}
+                            local ci, ti = order[current], order[facing]
+                            if ci and ti then
+                                local diff = (ti - ci) % 4
+                                if diff == 1 then dig.right(1)
+                                elseif diff == 2 then dig.right(2)
+                                elseif diff == 3 then dig.left(1)
                                 end
+                                current = dig.getCardinalDir()
                             else
                                 -- Absolute last resort: spin until success
                                 for _=1,4 do if dig.getCardinalDir()==facing then break end dig.left(1) end
+                                current = dig.getCardinalDir()
                             end
-                            logger.log("Fallback rotation applied; now facing=" .. tostring(dig.getCardinalDir()))
+                            logger.log("Post-correction facing (gps=" .. tostring(usedGPS) .. ") now=" .. tostring(current))
                         end
                     else
                         logger.warn("No facing information provided by server")
