@@ -592,36 +592,20 @@ if config.isCoordinated then
         end
         
         face(forward)
-        logger.log("Starting serpentine mine: " .. width .. " columns x " .. length .. " length, facing " .. forward)
+        local depth = math.abs(config.zone.ymin)
+        local skip = config.zone.skip or 0
+        logger.log("Starting zone mine: " .. width .. " columns x " .. length .. " length x " .. depth .. " depth, facing " .. forward)
         
-        local goForward = true
-        for col = 1, width do
-            if config.aborted then return end
-            
-            logger.log("Column " .. col .. "/" .. width .. "; length=" .. length .. " (forward=" .. tostring(goForward) .. ")")
-            
-            if goForward then
-                for i = 1, length do 
-                    if not stepForward() then return end
-                end
-            else
-                for i = 1, length do 
-                    if not stepBack() then return end
-                end
-            end
-            
-            -- Move laterally to next column (except after last)
-            if col < width then
-                -- When facing east: right=south (decreasing Z, increasing X into zone)
-                -- When facing west: left=north (increasing Z, increasing X into zone)
-                -- When facing north: right=east (increasing X)
-                -- When facing south: left=west (increasing X)
-                local side = ((forward == "east" or forward == "north") and "right" or "left")
-                if not lateralStep(side) then return end
-                face(forward)
-                goForward = not goForward
-            end
-        end
+        -- Use dig.select() to mine the zone with proper depth handling
+        dig.select(
+            config.zone.xmin,
+            config.zone.ymin,
+            config.zone.zmin,
+            width,
+            length,
+            depth,
+            skip
+        )
         
         logger.log("Mining complete!")
     end

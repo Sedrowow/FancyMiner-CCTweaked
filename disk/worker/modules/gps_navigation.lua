@@ -210,7 +210,26 @@ function M.goto(targetX, targetY, targetZ)
             facing = turnToFace(facing, targetFacing)
             
             if not dig.fwd() then
-                attempts = attempts + 1
+                -- Attempt simple avoidance: try sidestep left then right and continue
+                local avoided = false
+                -- Try left sidestep
+                dig.left(1)
+                if dig.fwd() then
+                    avoided = true
+                else
+                    -- Try right sidestep from original
+                    dig.right(2)
+                    if dig.fwd() then
+                        avoided = true
+                    else
+                        -- Restore facing
+                        dig.left(1)
+                    end
+                end
+                
+                if not avoided then
+                    attempts = attempts + 1
+                end
             end
         else
             attempts = attempts + 1

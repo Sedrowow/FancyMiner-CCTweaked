@@ -121,6 +121,39 @@ end
 
 -- Internal helper to restore state with fallback support
 local function restoreStateWithFallback(savedState, digAPI, gpsNavAPI, logger, fallbackDir)
+    -- Check if turtle is in its assigned zone
+    local currentGPS = gpsNavAPI.getPosition()
+    if currentGPS and savedState.config and savedState.config.gps_zone then
+        local zone = savedState.config.gps_zone
+        local inZone = (currentGPS.x >= zone.gps_xmin and currentGPS.x <= zone.gps_xmax and
+                        currentGPS.z >= zone.gps_zmin and currentGPS.z <= zone.gps_zmax)
+        
+        if not inZone then
+            logger.warn("Turtle is outside assigned zone! Current: (" .. currentGPS.x .. "," .. currentGPS.z .. 
+                       ") Zone: X[" .. zone.gps_xmin .. "-" .. zone.gps_xmax .. "] Z[" .. zone.gps_zmin .. "-" .. zone.gps_zmax .. "]")
+            logger.log("Resetting to zone start position instead of resuming from saved location")
+            
+            -- Navigate to zone start (startGPS) and reset dig coordinates to 0,0,0
+            if savedState.config.startGPS then
+                gpsNavAPI.init(true)
+                logger.log("Navigating back to zone start: (" .. 
+                          savedState.config.startGPS.x .. "," .. 
+                          savedState.config.startGPS.y .. "," .. 
+                          savedState.config.startGPS.z .. ")")
+                gpsNavAPI.gotoGPS(savedState.config.startGPS.x, savedState.config.startGPS.y, savedState.config.startGPS.z)
+                
+                -- Reset dig coordinates to zone origin
+                digAPI.reset(0, 0, 0, 0)
+                if savedState.config.desiredFacing then
+                    digAPI.setCardinalDir(savedState.config.desiredFacing)
+                    gpsNavAPI.faceDirection(savedState.config.desiredFacing)
+                end
+                logger.log("Position reset to zone start - ready to mine from beginning")
+                return true
+            end
+        end
+    end
+    
     -- Re-initialize GPS navigation
     if savedState.config and savedState.config.startGPS then
         gpsNavAPI.init(true)
