@@ -38,11 +38,21 @@ end
 function Log.init(path)
     if path then logPath = path end
     local okTime = 'unknown'
-    local success, formatted = pcall(function()
-        -- textutils.formatTime: second param = showSeconds (boolean)
-        return textutils.formatTime(os.time(), true)
-    end)
-    if success and formatted then okTime = formatted end
+    -- Safely attempt CC:Tweaked time formatting; guard against API variations
+    local rawTime = os.time()
+    if textutils and type(textutils.formatTime) == 'function' then
+        local success, formatted = pcall(function()
+            -- Some versions: formatTime(time, use24Hour) OR formatTime(time, showSeconds)
+            -- Try both boolean values; fallback to raw string.
+            local f1 = textutils.formatTime(rawTime, true)
+            if type(f1) == 'string' then return f1 end
+            local f2 = textutils.formatTime(rawTime, false)
+            return type(f2) == 'string' and f2 or tostring(rawTime)
+        end)
+        if success and formatted then okTime = formatted else okTime = tostring(rawTime) end
+    else
+        okTime = tostring(rawTime)
+    end
     append('=== Log started at ' .. okTime .. ' ===')
 end
 
