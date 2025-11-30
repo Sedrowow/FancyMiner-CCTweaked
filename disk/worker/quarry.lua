@@ -612,7 +612,11 @@ if config.isCoordinated then
             
             -- Move laterally to next column (except after last)
             if col < width then
-                local side = ((forward == "east" or forward == "south") and "left" or "right")
+                -- When facing east: right=south (decreasing Z, increasing X into zone)
+                -- When facing west: left=north (increasing Z, increasing X into zone)
+                -- When facing north: right=east (increasing X)
+                -- When facing south: left=west (increasing X)
+                local side = ((forward == "east" or forward == "north") and "right" or "left")
                 if not lateralStep(side) then return end
                 face(forward)
                 goForward = not goForward
@@ -631,8 +635,8 @@ if config.isCoordinated then
         )
     end)
     
-    -- Handle abort
-    if not miningSuccess and config.aborted then
+    -- Handle abort (check config.aborted regardless of miningSuccess)
+    if config.aborted then
         logger.log("Abort received - dumping inventory and returning to start...")
         sendStatusUpdate("aborting")
         

@@ -154,10 +154,13 @@ function M.waitForCleanupCommand(modem, serverChannel, deployerID)
     while true do
         local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
         
-        if type(message) == "table" and 
-           message.type == "cleanup_command" and 
-           message.turtle_id == deployerID then
-            return true
+        if type(message) == "table" then
+            if message.type == "cleanup_command" and message.turtle_id == deployerID then
+                return "cleanup"
+            elseif message.type == "abort_mining" then
+                print("Abort signal received during wait")
+                return "abort"
+            end
         end
     end
 end

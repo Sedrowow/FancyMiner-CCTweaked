@@ -198,8 +198,12 @@ shell.run("bootstrap.lua")
 state.workerPhaseComplete = true
 stateModule.save(state)
 
--- Wait for cleanup command from server
-communication.waitForCleanupCommand(modem, SERVER_CHANNEL, state.deployerID)
+-- Wait for cleanup command or abort from server
+local waitResult = communication.waitForCleanupCommand(modem, SERVER_CHANNEL, state.deployerID)
+
+if waitResult == "abort" then
+    print("\n=== Abort Received - Collecting Workers Early ===")
+end
 
 -- Collect all deployed workers
 print("\n=== Collecting Workers ===")
