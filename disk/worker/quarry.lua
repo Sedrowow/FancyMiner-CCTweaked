@@ -595,18 +595,48 @@ if config.isCoordinated then
         local depth = math.abs(config.zone.ymin)
         local skip = config.zone.skip or 0
         logger.log("Starting zone mine: " .. width .. " columns x " .. length .. " length x " .. depth .. " depth, facing " .. forward)
-        
-        -- Use dig.select() to mine the zone with proper depth handling
-        dig.select(
-            config.zone.xmin,
-            config.zone.ymin,
-            config.zone.zmin,
-            width,
-            length,
-            depth,
-            skip
-        )
-        
+
+        -- Layered serpentine: mine one horizontal layer, then move down
+        for layer = 1, depth do
+            if config.aborted then return end
+
+            logger.log("Layer " .. layer .. "/" .. depth)
+            local goForward = true
+
+            for col = 1, width do
+                if config.aborted then return end
+
+                logger.log("  Column " .. col .. "/" .. width .. "; length=" .. length .. " (forward=" .. tostring(goForward) .. ")")
+
+                if goForward then
+                    for i = 1, length do
+                        if not stepForward() then return end
+                    end
+                else
+                    for i = 1, length do
+                        if not stepBack() then return end
+                    end
+                end
+
+                -- Move laterally to next column (except after last)
+                if col < width then
+                    local side = ((forward == "east" or forward == "north") and "right" or "left")
+                    if not lateralStep(side) then return end
+                    face(forward)
+                    goForward = not goForward
+                end
+            end
+
+            -- Move down to next layer, attempt to align facing again
+            if layer < depth then
+                if not turtle.down() then
+                    turtle.digDown()
+                    if not turtle.down() then return end
+                end
+                face(forward)
+            end
+        end
+
         logger.log("Mining complete!")
     end
     
