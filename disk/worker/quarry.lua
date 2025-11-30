@@ -209,18 +209,27 @@ local function initializeWorker()
                         if not pos1 then return end
                         local moved, turns = false, 0
                         -- Try up to 4 orientations to find a free forward move
+
                         for i=1,4 do
                             if turtle.forward() then
                                 moved = true
                                 break
                             else
-                                turtle.dig()
-                                if turtle.forward() then moved = true break end
+                                if turtle.dig() then
+                                    sleep(0.2)
+                                end
+                                if turtle.forward() then
+                                    moved = true
+                                    break
+                                end
                                 turtle.turnRight(); turns = turns + 1
                             end
                         end
+                        if moved then
+                            sleep(0.3)
+                        end
                         local pos2 = gpsUtils.getGPS(4)
-                        if moved then turtle.back() end
+                        if moved then turtle.back() sleep(0.2) end
                         -- Restore original rotation
                         for i=1,turns do turtle.turnLeft() end
 
