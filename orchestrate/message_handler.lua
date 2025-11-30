@@ -20,6 +20,11 @@ local function handleDeployRequest(modem, serverChannel, broadcastChannel, state
     state.quarryParams = message.quarry_params
     state.isDeployerWorker = message.is_deployer or false
     
+    -- Reset counters for fresh deployment
+    state.readyCount = 0
+    state.completedCount = 0
+    state.miningStarted = false
+    
     local zones = ZoneManager.calculateZones(
         message.quarry_params.width,
         message.quarry_params.length,

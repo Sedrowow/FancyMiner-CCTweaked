@@ -297,7 +297,9 @@ function Display.showMainView(state)
     Display.setColor(colors.white)
     Display.write("=== Orchestration Server ===")
     Display.setCursorPos(1, 2)
-    Display.write("Workers: " .. state.totalWorkers .. " | Ready: " .. state.readyCount)
+    local total = tonumber(state.totalWorkers) or 0
+    local ready = tonumber(state.readyCount) or 0
+    Display.write("Workers: " .. total .. " | Ready: " .. ready)
     Display.setCursorPos(1, 3)
     Display.write("Complete: " .. state.completedCount)
     Display.setCursorPos(1, 4)
