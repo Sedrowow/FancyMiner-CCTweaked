@@ -3,6 +3,7 @@
 -- Manages zone assignments, resource access queues, worker lifecycle, and firmware distribution
 
 -- Load modules
+local Log = dofile('orchestrate/log.lua')
 local Display = require("orchestrate.display")
 local State = require("orchestrate.state")
 local Firmware = require("orchestrate.firmware")
@@ -37,7 +38,10 @@ modem.open(SERVER_CHANNEL)
 modem.open(BROADCAST_CHANNEL)
 
 -- Initialize display
+Log.init()
+Log.wrapPrint()
 Display.init()
+print("Logging to server_log.txt (rotation enabled)")
 
 print("Orchestration Server Started")
 print("Server Channel: " .. SERVER_CHANNEL)

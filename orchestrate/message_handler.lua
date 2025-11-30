@@ -78,6 +78,11 @@ local function handleChestPositions(modem, serverChannel, state, message)
     state.gpsZones = gpsZones
     state.initialDirection = initialDirection
     print("GPS zones calculated with coordinate transformation")
+
+    -- Debug: list all GPS zones for verification
+    for i, gz in ipairs(state.gpsZones) do
+        print(string.format("  Zone %d GPS: X[%d-%d] Z[%d-%d] Y[%d-%d]", i, gz.gps_xmin, gz.gps_xmax, gz.gps_zmin, gz.gps_zmax, gz.gps_ymin, gz.gps_ymax))
+    end
     
     if not state.firmwareLoaded then
         state.firmwareLoaded = true
@@ -231,6 +236,12 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
         )
         
         print("  Using initial direction: " .. initialDirection)
+
+        -- Derive desired facing for forward mining (dig.lua forward = +Z local = quarry length axis)
+        -- initialDirection maps dig +X; we rotate 90 degrees clockwise to get dig +Z mapping for mining
+        local rotateClockwise = { north = "east", east = "south", south = "west", west = "north" }
+        local desiredFacing = rotateClockwise[initialDirection] or initialDirection
+        print("  Computed desired facing for mining: " .. desiredFacing)
         
         state.workers[turtleID].zone_index = matchedZone
         state.workers[turtleID].status = "assigned"
@@ -246,7 +257,7 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
                 output = state.chestPositions.output
             },
             initial_direction = initialDirection,  -- Cardinal for dig +X axis mapping
-            desired_facing = initialDirection,     -- Workers should face this cardinal to mine consistent direction
+            desired_facing = desiredFacing,        -- Workers should face this cardinal so forward = quarry length
             server_channel = serverChannel
         })
         

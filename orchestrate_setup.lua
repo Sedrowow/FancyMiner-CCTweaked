@@ -242,7 +242,7 @@ local function setupOrchestrationServer()
     
     local orchestrateModules = {
         "display.lua", "state.lua", "firmware.lua",
-        "resource_manager.lua", "zone_manager.lua", "message_handler.lua"
+        "resource_manager.lua", "zone_manager.lua", "message_handler.lua", "log.lua"
     }
     
     local baseUrl = REPO_RAW_BASE .. "orchestrate/"

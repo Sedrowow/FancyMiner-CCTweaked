@@ -203,6 +203,36 @@ local function initializeWorker()
                     -- Initialize GPS navigation with calibration so we know true facing
                     gpsNav.init(true)
 
+                    -- Calibrate actual physical facing by short forward/back probe
+                    local function probeFacing()
+                        local pos1 = gpsUtils.getGPS(4)
+                        if not pos1 then return end
+                        -- attempt forward (dig if needed)
+                        local moved = false
+                        if turtle.forward() then
+                            moved = true
+                        else
+                            turtle.dig()
+                            if turtle.forward() then moved = true end
+                        end
+                        local pos2 = gpsUtils.getGPS(4)
+                        if moved then turtle.back() end
+                        if not (pos1 and pos2) then return end
+                        local dx = pos2.x - pos1.x
+                        local dz = pos2.z - pos1.z
+                        local dir
+                        if math.abs(dx) > math.abs(dz) then
+                            dir = (dx > 0) and "east" or "west"
+                        else
+                            dir = (dz > 0) and "south" or "north"
+                        end
+                        if dir then
+                            dig.setCardinalDir(dir)
+                            logger.log("Probe determined current facing: " .. dir)
+                        end
+                    end
+                    if not dig.getCardinalDir() then probeFacing() end
+
                     -- Handle orientation: desired_facing indicates the cardinal we want turtle to face physically.
                     local facing = message.desired_facing or message.initial_direction
                     if facing then
