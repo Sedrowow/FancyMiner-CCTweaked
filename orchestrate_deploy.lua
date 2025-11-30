@@ -126,9 +126,29 @@ local function deploy()
     -- Wait for fuel to be added to the fuel chest
     chestManager.waitForFuel(dig)
     
+    -- Compute desired facing (same rule as server):
+    -- If user provided facing override earlier, use it; otherwise one-left of chest-derived direction
+    local function calculateInitialDirection(fuelGPS, outputGPS)
+        local dx = fuelGPS.x - outputGPS.x
+        local dz = fuelGPS.z - outputGPS.z
+        if math.abs(dx) > math.abs(dz) then
+            return (dx > 0) and "east" or "west"
+        else
+            return (dz > 0) and "south" or "north"
+        end
+    end
+    local initialDir = calculateInitialDirection(chestPositions.fuel, chestPositions.output)
+    local desiredFacing = nil
+    if state.deployerFacing then
+        desiredFacing = state.deployerFacing
+    else
+        local rotateLeft = { north = "west", west = "south", south = "east", east = "north" }
+        desiredFacing = rotateLeft[initialDir] or initialDir
+    end
+
     -- Deploy all worker turtles
     print("\n=== Deploying Workers ===")
-    local successCount, failCount = workerDeploy.deployAll(turtleSlots, state.zones, dig)
+    local successCount, failCount = workerDeploy.deployAll(turtleSlots, state.zones, dig, desiredFacing)
     print(string.format("Deployed %d workers (%d failed)", successCount, failCount))
     
     -- Prepare deployer turtle with fuel

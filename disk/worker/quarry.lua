@@ -279,6 +279,12 @@ local function initializeWorker()
 
                         -- Verify and correct if mismatch
                         local current = dig.getCardinalDir()
+                        if not current then
+                            -- Fallback: assume desired_facing if probe failed
+                            dig.setCardinalDir(facing)
+                            current = facing
+                            logger.log("Fallback: assuming desired facing due to probe failure")
+                        end
                         if current ~= facing then
                             local order = {north=1,east=2,south=3,west=4}
                             local ci, ti = order[current], order[facing]

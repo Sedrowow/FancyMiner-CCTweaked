@@ -49,7 +49,7 @@ end
 --   zoneIndex: worker number for display
 --   digAPI: reference to dig API for navigation
 -- Returns: success (boolean), error message (string or nil)
-function M.deployWorker(slot, zone, zoneIndex, digAPI)
+function M.deployWorker(slot, zone, zoneIndex, digAPI, desiredFacing)
     local detail = turtle.getItemDetail(slot)
     if not detail or not detail.name:find("turtle") then
         return false, "No turtle in slot " .. slot
@@ -62,7 +62,13 @@ function M.deployWorker(slot, zone, zoneIndex, digAPI)
     end
     
     print("Deploying worker " .. zoneIndex)
-    digAPI.goto(zone.xmin, 0, 0, 180)
+    -- Face desired direction and pre-clear one block forward to ensure probe movement
+    local faceMap = { north = 0, east = 90, south = 180, west = 270 }
+    local r = faceMap[(desiredFacing or "south")] or 180
+    digAPI.goto(zone.xmin, 0, 0, r)
+    if turtle.detect() then
+        turtle.dig()
+    end
     
     -- Clear space and place turtle
     if turtle.detectDown() then 
@@ -88,12 +94,12 @@ end
 
 -- Deploy all workers from turtle slots to their assigned zones
 -- Returns: number of successful deployments, number of failures
-function M.deployAll(turtleSlots, zones, digAPI)
+function M.deployAll(turtleSlots, zones, digAPI, desiredFacing)
     local successCount = 0
     local failCount = 0
     
     for i, slot in ipairs(turtleSlots) do
-        local success, err = M.deployWorker(slot, zones[i], i, digAPI)
+        local success, err = M.deployWorker(slot, zones[i], i, digAPI, desiredFacing)
         if success then
             successCount = successCount + 1
         else
