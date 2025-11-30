@@ -323,6 +323,8 @@ local function initializeWorker()
                         type = "worker_ready",
                         turtle_id = config.turtleID
                     })
+                    logger.log("Sent worker_ready signal to server")
+                    sleep(0.1)  -- Brief delay to ensure message transmission
                     
                     -- Define serpentine mining helpers
                     local function face(dir)

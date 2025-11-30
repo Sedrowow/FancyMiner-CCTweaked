@@ -317,6 +317,8 @@ local function handleWorkerReady(modem, serverChannel, broadcastChannel, state, 
     local turtleID = message.turtle_id
     local wasReady = state.workers[turtleID] and state.workers[turtleID].status == "ready"
     
+    print("DEBUG: Received worker_ready from turtle " .. turtleID .. " (wasReady=" .. tostring(wasReady) .. ")")
+    
     if not state.workers[turtleID] then
         state.workers[turtleID] = {}
     end
