@@ -218,7 +218,7 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
             -- often queue up along Z but share the same X, which all maps to zone 1.
             -- If the worker stands on the start X edge, assign the first unassigned
             -- zone whose Z range contains the worker, ignoring X.
-            local startGPS = state.chestPositions and state.chestPositions.start
+            local startGPS = state.startGPS
             local assignedIndex = nil
             if startGPS and workerGPS.x == startGPS.x then
                 for i = 1, #state.gpsZones do
