@@ -323,6 +323,91 @@ local function initializeWorker()
                         type = "worker_ready",
                         turtle_id = config.turtleID
                     })
+                    
+                    -- Define serpentine mining helpers
+                    local function face(dir)
+                        if gpsNav.faceDirection then 
+                            gpsNav.faceDirection(dir) 
+                        else
+                            local order = {north=1,east=2,south=3,west=4}
+                            local ci, ti = order[dig.getCardinalDir() or dir], order[dir]
+                            if ci and ti then
+                                local diff = (ti - ci) % 4
+                                if diff == 1 then dig.right(1) 
+                                elseif diff == 2 then dig.right(2) 
+                                elseif diff == 3 then dig.left(1) 
+                                end
+                            end
+                        end
+                        dig.setCardinalDir(dir)
+                    end
+
+                    local function stepForward()
+                        if not turtle.forward() then 
+                            turtle.dig()
+                            turtle.forward() 
+                        end
+                    end
+                    
+                    local function stepBack()
+                        if not turtle.back() then 
+                            dig.right(2)
+                            stepForward()
+                            dig.right(2) 
+                        end
+                    end
+                    
+                    local function lateralStep(side)
+                        if side == "left" then 
+                            dig.left(1)
+                            stepForward()
+                            dig.right(1) 
+                        else 
+                            dig.right(1)
+                            stepForward()
+                            dig.left(1) 
+                        end
+                    end
+
+                    -- Serpentine mining function: forward = zone length (z), lateral = zone width (x)
+                    local function mineZone()
+                        local zmin, zmax = config.zone.zmin, config.zone.zmax
+                        local xmin, xmax = config.zone.xmin, config.zone.xmax
+                        local length = (zmax - zmin + 1)   -- forward distance per row
+                        local width = (xmax - xmin + 1)    -- number of columns to traverse
+                        local forward = facing or message.initial_direction or "east"
+                        
+                        face(forward)
+                        logger.log("Starting serpentine mine: " .. width .. " columns x " .. length .. " length, facing " .. forward)
+                        
+                        local goForward = true
+                        for col = 1, width do
+                            logger.log("Column " .. col .. "/" .. width .. "; length=" .. length .. " (forward=" .. tostring(goForward) .. ")")
+                            
+                            if goForward then
+                                for i = 1, length do 
+                                    stepForward() 
+                                end
+                            else
+                                for i = 1, length do 
+                                    stepBack() 
+                                end
+                            end
+                            
+                            -- Move laterally to next column (except after last)
+                            if col < width then
+                                local side = ((forward == "east" or forward == "south") and "left" or "right")
+                                lateralStep(side)
+                                face(forward)
+                                goForward = not goForward
+                            end
+                        end
+                        
+                        logger.log("Mining complete!")
+                    end
+                    
+                    -- Store for later invocation on start signal
+                    config.mineZone = mineZone
                 end
             end
         end
@@ -456,74 +541,12 @@ if config.isCoordinated then
         end
     end
     
-    -- Quarry mining function with serpentine pattern
+    -- Use the new serpentine mining function defined during init
     local function mineQuarry()
-        -- Resume from last position if available
-        local startY = dig.gety()
-        local startZ = dig.getz()
-        local startX = dig.getx()
-        
-        logger.log("Quarry loop starting from position: " .. startX .. "," .. startY .. "," .. startZ)
-        
-        local xStep = -1
-        for y = 0, -depth, -1 do
-            if config.aborted then return end
-            -- Skip layers above where we left off
-            if y > startY then
-                -- Skip this layer entirely
-            elseif y <= -skip then
-                for z = 0, length - 1 do
-                    if config.aborted then return end
-                    -- Skip rows before where we left off on the current layer
-                    if y == startY and z < startZ then
-                        -- Track xStep direction for this row
-                        xStep = -xStep
-                    else
-                        local xStart = (xStep == -1) and 0 or -(width - 1)
-                        local xEnd = (xStep == -1) and -(width - 1) or 0
-                        
-                        for x = xStart, xEnd, xStep do
-                            if config.aborted then return end
-                            -- Skip blocks before where we left off in the current row
-                            if y == startY and z == startZ then
-                                if (xStep == -1 and x > startX) or (xStep == 1 and x < startX) then
-                                    goto continue
-                                end
-                            end
-                            
-                            checkFuel()
-                            checkInv()
-                            if not config.aborted then
-                                dig.goto(x, y, z, 0)
-                            else
-                                return
-                            end
-                            
-                            dig.blockLavaUp()
-                            dig.blockLava()
-                            dig.blockLavaDown()
-                            
-                            if turtle.detectDown() then
-                                -- Check if it's a turtle before digging
-                                local success, data = turtle.inspectDown()
-                                if not (success and data.name and data.name:match("^computercraft:turtle")) then
-                                    turtle.digDown()
-                                end
-                            end
-                            
-                            dig.blockLavaDown()
-                            
-                            ::continue::
-                        end
-                        
-                        xStep = -xStep  -- Flip direction for next row
-                    end
-                end
-            end
-        end
-        
-        if not config.aborted then
-            dig.goto(0, 0, 0, 0)
+        if config.mineZone then
+            config.mineZone()
+        else
+            logger.error("mineZone function not initialized!")
         end
     end
     
