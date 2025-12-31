@@ -27,6 +27,12 @@ end
 -- Send a message to the server
 function M.sendMessage(modem, channel, message)
     if not modem then return false end
+    
+    -- Add random delay (0.1-0.5 seconds) to prevent collision with other turtles
+    -- This is especially important when multiple turtles send messages simultaneously
+    local randomDelay = math.random(10, 50) / 100  -- 0.1 to 0.5 seconds
+    os.sleep(randomDelay)
+    
     modem.transmit(channel, channel, message)
     return true
 end

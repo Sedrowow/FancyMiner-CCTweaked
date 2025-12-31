@@ -166,6 +166,10 @@ local function initializeWorker()
         
         -- Send ready signal to server so it knows we're back online
         if config.serverChannel then
+            -- Add staggered delay to prevent collision with other turtles
+            local randomDelay = math.random(10, 50) / 100  -- 0.1 to 0.5 seconds
+            os.sleep(randomDelay)
+            
             modem.transmit(config.serverChannel, config.serverChannel, {
                 type = "worker_ready",
                 turtle_id = config.turtleID
