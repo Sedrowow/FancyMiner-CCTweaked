@@ -6,7 +6,7 @@ local M = {}
 -- Request access to a resource (fuel or output)
 function M.requestAccess(modem, serverChannel, turtleID, resourceType, logger, config)
     if not modem or not serverChannel then
-        return true, nil, nil, nil -- Not in coordinated mode, no error
+        return true -- Not in coordinated mode
     end
     
     logger.log("Requesting " .. resourceType .. " access...")
@@ -19,7 +19,7 @@ function M.requestAccess(modem, serverChannel, turtleID, resourceType, logger, c
     })
     
     -- Wait for grant
-    local timeout = os.startTimer(60) -- 1 minute timeout (reduced from 5 to avoid stuck workers)
+    local timeout = os.startTimer(300) -- 5 minute timeout
     local granted = false
     local chestPos = nil
     local approachDir = nil
@@ -27,7 +27,6 @@ function M.requestAccess(modem, serverChannel, turtleID, resourceType, logger, c
     while not granted do
         -- Abort check: if server issued abort while waiting in queue, stop gracefully
         if config and config.aborted then
-            os.cancelTimer(timeout)
             logger.log("Abort detected while waiting for " .. resourceType .. " access; leaving queue")
             return false, nil, nil, "aborted"
         end
@@ -36,13 +35,12 @@ function M.requestAccess(modem, serverChannel, turtleID, resourceType, logger, c
         
         if event == "timer" and p1 == timeout then
             logger.warn("Timeout waiting for " .. resourceType .. " access")
-            return false, nil, nil, "timeout"
+            return false
         elseif event == "modem_message" then
             local message = p4
             if type(message) == "table" then
                 if message.type == "abort_mining" then
                     if config then config.aborted = true end
-                    os.cancelTimer(timeout)
                     logger.log("Abort message received while queued for " .. resourceType)
                     return false, nil, nil, "aborted"
                 elseif message.type == "resource_granted" and 
@@ -60,7 +58,7 @@ function M.requestAccess(modem, serverChannel, turtleID, resourceType, logger, c
         end
     end
     
-    return true, chestPos, approachDir, nil
+    return true, chestPos, approachDir
 end
 
 -- Release a resource
@@ -151,25 +149,42 @@ function M.accessResource(resourceType, returnPos, modem, serverChannel, turtleI
         modem, serverChannel, turtleID, resourceType, logger, config
     )
     
-    -- If abort was detected during request, or timeout occurred, still return to target position
-    if errType == "aborted" or errType == "timeout" then
-        if errType == "aborted" then
-            logger.log("Abort detected during resource request")
-        else
-            logger.log("Resource access request timed out (server may be down)")
+    -- If abort was detected during request, skip queue and handle manually
+    if errType == "aborted" then
+        logger.log("Abort detected during resource request")
+        
+        -- If this is output resource, dump inventory directly to chest without queue
+        if resourceType == "output" then
+            local chestGPS = config.chestGPS[resourceType]
+            if chestGPS then
+                logger.log("Navigating to output chest for direct dump...")
+                local navSuccess = gpsNavAPI.goto(chestGPS.x, chestGPS.y - 1, chestGPS.z)
+                if navSuccess then
+                    logger.log("At output chest, dumping inventory directly...")
+                    M.dumpInventory()
+                    logger.log("Inventory dumped")
+                else
+                    logger.warn("Could not navigate to output chest during abort")
+                end
+            else
+                logger.warn("Output chest position unknown, cannot dump inventory")
+            end
         end
         
+        -- Now return to target position
         if targetReturnPos then
-            logger.log("Navigating back to target position: " .. textutils.serialize(targetReturnPos))
+            logger.log("Returning to target position after abort: " .. textutils.serialize(targetReturnPos))
             local returnSuccess = gpsNavAPI.goto(
                 targetReturnPos.x, 
                 targetReturnPos.y, 
                 targetReturnPos.z
             )
             if not returnSuccess then
-                logger.warn("Could not return to target position")
+                logger.warn("Could not return to target position during abort - will try again")
+                -- Try once more with shorter timeout
+                gpsNavAPI.goto(targetReturnPos.x, targetReturnPos.y, targetReturnPos.z)
             else
-                logger.log("Successfully returned to target position")
+                logger.log("Successfully returned to target position during abort")
             end
         end
         return
