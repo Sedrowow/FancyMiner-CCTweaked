@@ -57,8 +57,8 @@ local function tryResumeJob()
         if config.isCoordinated and config.zone and config.serverChannel then
             logger.log("Checking job status with server...")
             
-            -- Check job status
-            local jobActive = communication.checkJobStatus(modem, config.serverChannel, config.turtleID, 30)
+            -- Check job status (with short timeout since server might be new)
+            local jobActive, jobStatus = communication.checkJobStatus(modem, config.serverChannel, config.turtleID, 10)
             
             if jobActive then
                 logger.log("Job is active - restoring from local state")
@@ -67,23 +67,39 @@ local function tryResumeJob()
                 local success, err = stateModule.restore(savedState, dig, gpsNav, logger)
                 if not success then
                     logger.error("Failed to restore state: " .. tostring(err))
+                    logger.log("Clearing saved state and restarting...")
+                    stateModule.clear(config.turtleID)
                     return false
                 end
                 
                 return true
             else
-                logger.log("No active job - clearing saved state")
+                logger.log("Job not active (server may have restarted) - clearing saved state and waiting for new assignment")
                 stateModule.clear(config.turtleID)
+                -- Reset config so we wait for new assignment
+                config = {
+                    turtleID = os.getComputerID(),
+                    serverChannel = nil,
+                    broadcastChannel = 65535,
+                    zone = nil,
+                    gps_zone = nil,
+                    chestGPS = {
+                        fuel = nil,
+                        output = nil
+                    },
+                    isCoordinated = false,
+                    startGPS = nil,
+                    aborted = false,
+                    miningStarted = false
+                }
             end
         end
     end
     
-    -- No local state or job inactive - try to resume from server state
-    if config.serverChannel then
-        logger.log("No local state - checking server for active job...")
-        return stateModule.tryResumeFromServer(
-            modem, config, dig, gpsNav, logger, communication, gpsUtils, saveState
-        )
+    -- No local state or job inactive - try to get server channel and wait for assignment
+    if not config.serverChannel then
+        logger.log("No server channel - broadcasting for server info...")
+        -- This will be handled in initializeWorker with timeout waiting for assignment
     end
     
     return false
@@ -176,17 +192,34 @@ local function initializeWorker()
     end
     
     logger.log("No existing job - waiting for zone assignment...")
-    local initTimeout = os.startTimer(120)
+    local initTimeoutTime = 120  -- 2 minutes timeout per attempt
+    local totalWaitTime = 600    -- 10 minutes total wait before error
+    local startWaitTime = os.clock()
     
     while not gotAssignment do
+        local timeElapsed = os.clock() - startWaitTime
+        if timeElapsed > totalWaitTime then
+            logger.error("Timeout waiting for zone assignment after " .. math.floor(timeElapsed) .. " seconds")
+            error("Server initialization timeout - no zone assignment received")
+        end
+        
+        local initTimeout = os.startTimer(initTimeoutTime)
+        
+        -- Pull event with timeout
         local event, p1, p2, p3, p4, p5 = os.pullEvent()
         
         if event == "timer" and p1 == initTimeout then
-            error("Timeout waiting for zone assignment")
+            local timeLeft = totalWaitTime - timeElapsed
+            if timeLeft > 0 then
+                logger.warn("No response from server (" .. math.floor(timeElapsed) .. "s elapsed, waiting up to " .. 
+                    math.floor(timeLeft) .. "s more)...")
+                -- Don't error, just retry the timeout loop
+            end
         elseif event == "modem_message" then
             local side, channel, replyChannel, message = p1, p2, p3, p4
             if type(message) == "table" then
                 if message.type == "zone_assignment" and message.turtle_id == config.turtleID then
+                    os.cancelTimer(initTimeout)
                     -- This zone assignment is for us!
                     local verifyGPS = gpsUtils.getGPS(5)
                     if not verifyGPS then
@@ -243,17 +276,18 @@ local function initializeWorker()
                     logger.log("  Fuel: " .. gpsUtils.formatGPS(config.chestGPS.fuel))
                     
                     gotAssignment = true
-                    os.cancelTimer(initTimeout)
-                    
-                    -- Send ready signal
-                    modem.transmit(config.serverChannel, config.serverChannel, {
-                        type = "worker_ready",
-                        turtle_id = config.turtleID
-                    })
                 end
             end
+        else
+            os.cancelTimer(initTimeout)
         end
     end
+    
+    -- Send ready signal so server knows we received assignment
+    modem.transmit(config.serverChannel, config.serverChannel, {
+        type = "worker_ready",
+        turtle_id = config.turtleID
+    })
     
     -- Wait for start signal
     logger.log("Waiting for start signal...")
@@ -365,11 +399,15 @@ if config.isCoordinated then
     
     -- Set up parallel task to listen for abort
     local function abortListener()
+        -- Ensure modem is open on broadcast channel
+        modem.open(config.broadcastChannel)
+        
         while not config.aborted do
             local event, side, channel, replyChannel, message = os.pullEvent("modem_message")
-            if type(message) == "table" and message.type == "abort_mining" then
+            if channel == config.broadcastChannel and type(message) == "table" and message.type == "abort_mining" then
                 config.aborted = true
                 logger.section("ABORT RECEIVED")
+                logger.log("Abort signal received on channel " .. config.broadcastChannel)
                 break
             end
         end
@@ -465,19 +503,51 @@ if config.isCoordinated then
     
     -- Check if abort was triggered (regardless of pcall success)
     if config.aborted then
-        logger.log("Abort received - dumping inventory and returning to start...")
+        logger.section("ABORT SEQUENCE STARTED")
+        logger.log("Worker position before abort cleanup: " .. textutils.serialize(gpsNav.getPosition()))
+        logger.log("Attempting to dump inventory and return to start position...")
         sendStatusUpdate("aborting")
         
+        -- Get current position before attempting return
+        local currentPos = gpsNav.getPosition()
+        logger.log("Current GPS position: " .. textutils.serialize(currentPos))
+        logger.log("Target return position: " .. textutils.serialize(config.startGPS))
+        
         -- Use queuedResourceAccess to dump inventory, returning to starting position
+        -- This will handle abort/timeout gracefully and still return to start
         pcall(function()
             queuedResourceAccess("output", config.startGPS)
         end)
         
-        -- Send abort acknowledgment
-        local gpsPos = gpsUtils.getGPS(3)
-        communication.sendAbortAck(modem, config.serverChannel, config.turtleID, gpsPos)
+        -- After resource access attempt, ensure we're at start position
+        -- Even if resource access completely failed, we must return to start
+        local finalPos = gpsNav.getPosition()
+        if finalPos and config.startGPS then
+            if not (finalPos.x == config.startGPS.x and 
+                    finalPos.y == config.startGPS.y and 
+                    finalPos.z == config.startGPS.z) then
+                logger.log("Not at start position after resource access, doing fallback return...")
+                logger.log("Current position: " .. textutils.serialize(finalPos))
+                logger.log("Start position: " .. textutils.serialize(config.startGPS))
+                
+                -- Fallback: navigate directly to start position without resource access
+                local success = gpsNav.goto(config.startGPS.x, config.startGPS.y, config.startGPS.z)
+                if success then
+                    logger.log("Fallback return to start successful")
+                else
+                    logger.error("Fallback return to start FAILED - may need manual recovery")
+                end
+            end
+        end
         
-        logger.log("Abort complete - standing by at start position")
+        -- Get final position
+        local finalPos = gpsNav.getPosition()
+        logger.log("Final GPS position after abort cleanup: " .. textutils.serialize(finalPos))
+        
+        -- Send abort acknowledgment
+        communication.sendAbortAck(modem, config.serverChannel, config.turtleID, finalPos)
+        
+        logger.section("ABORT COMPLETE - STANDING BY FOR COLLECTION")
         sendStatusUpdate("aborted")
         
         -- Wait indefinitely so deployer can collect this turtle
