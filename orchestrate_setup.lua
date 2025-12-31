@@ -21,7 +21,7 @@ local function confirm(prompt)
     return key:lower() == "y"
 end
 
-local REPO_RAW_BASE = "https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/aaaa/"
+local REPO_RAW_BASE = "https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/aaaa-rework/"
 
 local function setupWorkerTurtle()
     printTitle("Worker Turtle Setup")
