@@ -226,6 +226,14 @@ local function initializeWorker()
                     -- Initialize GPS navigation
                     gpsNav.init()
                     
+                    -- CRITICAL: Set dig.lua coordinates to match zone position
+                    -- Workers are placed at their zone.xmin position in the dig.lua coordinate system
+                    dig.setx(config.zone.xmin)
+                    dig.sety(0)
+                    dig.setz(0)
+                    dig.setr(180)  -- Workers start with rotation=180
+                    logger.log("Initialized dig.lua position: (" .. config.zone.xmin .. ", 0, 0, 180)")
+                    
                     -- Save initial state
                     saveState()
                     
@@ -456,22 +464,31 @@ if config.isCoordinated then
         )
     end)
     
-    -- Handle abort
-    if not miningSuccess and config.aborted then
+    -- Check if abort was triggered (regardless of pcall success)
+    if config.aborted then
         logger.log("Abort received - dumping inventory and returning to start...")
         sendStatusUpdate("aborting")
         
         -- Use queuedResourceAccess to dump inventory, returning to starting position
-        queuedResourceAccess("output", config.startGPS)
+        pcall(function()
+            queuedResourceAccess("output", config.startGPS)
+        end)
         
         -- Send abort acknowledgment
         local gpsPos = gpsUtils.getGPS(3)
         communication.sendAbortAck(modem, config.serverChannel, config.turtleID, gpsPos)
         
-        logger.log("Abort complete - standing by")
+        logger.log("Abort complete - standing by at start position")
         sendStatusUpdate("aborted")
-        return
-    elseif not miningSuccess then
+        
+        -- Wait indefinitely so deployer can collect this turtle
+        while true do
+            os.sleep(1)
+        end
+    end
+    
+    -- Handle other errors
+    if not miningSuccess then
         error(miningError)
     end
     
