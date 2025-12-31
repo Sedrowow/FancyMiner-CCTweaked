@@ -149,11 +149,26 @@ function M.accessResource(resourceType, returnPos, modem, serverChannel, turtleI
         modem, serverChannel, turtleID, resourceType, logger, config
     )
     
-    if not success then
-        if errType == "aborted" then
-            logger.log("Resource access aborted before grant; skipping " .. resourceType .. " operation")
-            return
+    -- If abort was detected during request, still try to return to target position
+    if errType == "aborted" then
+        logger.log("Abort detected during resource request; returning to target position")
+        if targetReturnPos then
+            logger.log("Navigating back to target position: " .. textutils.serialize(targetReturnPos))
+            local returnSuccess = gpsNavAPI.goto(
+                targetReturnPos.x, 
+                targetReturnPos.y, 
+                targetReturnPos.z
+            )
+            if not returnSuccess then
+                logger.warn("Could not return to target position during abort")
+            else
+                logger.log("Successfully returned to target position during abort")
+            end
         end
+        return
+    end
+    
+    if not success then
         logger.error("Failed to get " .. resourceType .. " access")
         return
     end

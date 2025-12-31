@@ -239,11 +239,24 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
         state.workers[turtleID].zone_index = matchedZone
         state.workers[turtleID].status = "assigned"
         
+        -- CRITICAL: Convert zone to worker-local coordinates
+        -- Zones are calculated in deployer dig.lua frame, but workers have their own (0,0,0) origin
+        -- Worker is placed at deployer dig.lua (zone.xmin, 0, 0), so it should mine (0 to width, 0 to length)
+        local workerLocalZone = {
+            xmin = 0,  -- Local frame starts at 0
+            xmax = state.zones[matchedZone].xmax - state.zones[matchedZone].xmin,  -- Width of zone
+            zmin = state.zones[matchedZone].zmin,  -- Depth unchanged (both in Z direction)
+            zmax = state.zones[matchedZone].zmax,  
+            ymin = state.zones[matchedZone].ymin,  -- Mining depth unchanged
+            ymax = state.zones[matchedZone].ymax,
+            skip = state.zones[matchedZone].skip
+        }
+        
         modem.transmit(serverChannel, serverChannel, {
             type = "zone_assignment",
             turtle_id = turtleID,
             zone_index = matchedZone,
-            zone = state.zones[matchedZone],
+            zone = workerLocalZone,  -- Send local coordinates, not deployer frame
             gps_zone = gpsZone,
             chest_gps = {
                 fuel = state.chestPositions.fuel,

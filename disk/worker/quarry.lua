@@ -226,13 +226,12 @@ local function initializeWorker()
                     -- Initialize GPS navigation
                     gpsNav.init()
                     
-                    -- CRITICAL: Set dig.lua coordinates to match zone position
-                    -- Workers are placed at their zone.xmin position in the dig.lua coordinate system
-                    dig.setx(config.zone.xmin)
-                    dig.sety(0)
-                    dig.setz(0)
-                    dig.setr(180)  -- Workers start with rotation=180
-                    logger.log("Initialized dig.lua position: (" .. config.zone.xmin .. ", 0, 0, 180)")
+                    -- Note: dig.lua coordinates start at (0,0,0) in this worker's frame
+                    -- The worker was placed at deployer dig.lua (zone.xmin, 0, 0), but from
+                    -- this worker's perspective, that's (0,0,0)
+                    -- The zone has already been adjusted to local coordinates by the server
+                    logger.log("Worker frame initialized: dig.lua origin (0,0,0), GPS origin " .. 
+                        gpsUtils.formatGPS(config.startGPS))
                     
                     -- Save initial state
                     saveState()
