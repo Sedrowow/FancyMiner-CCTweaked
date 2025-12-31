@@ -2,7 +2,7 @@
 -- This script checks for updates and re-runs setup if a new version is detected
 
 local COMPONENT_TYPE = "COMPONENT_TYPE_PLACEHOLDER"  -- Will be replaced by setup script
-local REPO_RAW_BASE = 'https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/aaaa/'
+local REPO_RAW_BASE = 'https://raw.githubusercontent.com/Sedrowow/FancyMiner-CCTweaked/aaaa-rework/'
 
 local function checkVersion()
     print("Checking for updates...")
