@@ -230,7 +230,11 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
             state.chestPositions.output
         )
         
-        print("  Using initial direction: " .. initialDirection)
+        -- Calculate the GPS direction workers should face (dig.lua rotation=180 → dig.lua -Z)
+        local workerFacing = ZoneManager.calculateWorkerFacing(initialDirection)
+        
+        print("  Using initial direction: " .. initialDirection .. " (dig.lua +X)")
+        print("  Worker should face: " .. workerFacing .. " (GPS cardinal)")
         
         state.workers[turtleID].zone_index = matchedZone
         state.workers[turtleID].status = "assigned"
@@ -245,8 +249,8 @@ local function handleReadyForAssignment(modem, serverChannel, state, message)
                 fuel = state.chestPositions.fuel,
                 output = state.chestPositions.output
             },
-            initial_direction = initialDirection,  -- Cardinal for dig +X axis mapping
-            desired_facing = initialDirection,     -- Workers should face this cardinal to mine consistent direction
+            initial_direction = initialDirection,  -- GPS direction dig.lua +X points toward
+            desired_facing = workerFacing,         -- GPS direction workers should face
             server_channel = serverChannel
         })
         

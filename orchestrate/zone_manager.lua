@@ -31,12 +31,26 @@ function ZoneManager.calculateZones(width, length, depth, skip, numWorkers)
     return zones
 end
 
--- Deployer faces a direction, workers face opposite (rotation 180)
--- dig.lua +X is to deployer's right, workers are placed along this axis
---   "north" = deployer's right is GPS +X (east)
---   "south" = deployer's right is GPS -X (west)
---   "east" = deployer's right is GPS +Z (south)
---   "west" = deployer's right is GPS -Z (north)
+-- Transform dig.lua local coordinates to GPS world coordinates
+-- 
+-- COORDINATE SYSTEM MAPPING:
+-- - dig.lua: local coordinate system starting at deployer's initial position (0,0,0)
+--   - dig.lua +X: workers spread along this axis (width dimension)
+--   - dig.lua +Z: mining forward direction (length dimension)  
+--   - dig.lua rotation=0: initial facing direction (points toward dig.lua +Z)
+--
+-- - GPS: world coordinates (North=-Z, East=+X, South=+Z, West=-X in Minecraft)
+--
+-- - initialDirection: which GPS cardinal direction dig.lua +X axis points toward
+--   (determined by observing chest GPS positions after deployer moves to dig.lua (1,0,0))
+--
+-- - dig.lua +Z is always 90° clockwise from dig.lua +X (when viewed from above, Y+)
+--
+-- ROTATION SYSTEM (dig.lua, clockwise positive):
+--   rotation=0   → faces dig.lua +Z
+--   rotation=90  → faces dig.lua +X  
+--   rotation=180 → faces dig.lua -Z (workers start with this)
+--   rotation=270 → faces dig.lua -X
 function ZoneManager.createGPSZones(zones, startGPS, initialDirection)
     if not zones then
         return nil, "zones is nil"
@@ -54,41 +68,38 @@ function ZoneManager.createGPSZones(zones, startGPS, initialDirection)
     for i, zone in ipairs(zones) do
         local gps_xmin, gps_xmax, gps_zmin, gps_zmax
         
-        -- Transform dig.lua coordinates to GPS coordinates based on direction
-        -- The deployer faces a direction, workers face opposite (rotation 180)
-        -- dig.lua +X is to the deployer's right, workers are placed along this axis
+        -- Transform dig.lua coordinates to GPS based on which direction dig.lua +X points
+        -- dig.lua +Z (rotation=0) is 90° COUNTER-clockwise from dig.lua +X (rotation=90)
+        -- This is because turning RIGHT (clockwise) from +Z gets you to +X
+        
         if initialDirection == "north" then
-            -- Deployer faces north (-Z), workers face south (+Z)
-            -- Deployer's right (dig.lua +X) is east (+X GPS)
-            -- dig.lua +Z (forward for deployer) = north (-Z GPS)
-            gps_xmin = startGPS.x + zone.xmin
-            gps_xmax = startGPS.x + zone.xmax
-            gps_zmin = startGPS.z - zone.zmax
-            gps_zmax = startGPS.z - zone.zmin
-        elseif initialDirection == "south" then
-            -- Deployer faces south (+Z), workers face north (-Z)
-            -- Deployer's right (dig.lua +X) is west (-X GPS)
-            -- dig.lua +Z (forward for deployer) = south (+Z GPS)
-            gps_xmin = startGPS.x - zone.xmax
-            gps_xmax = startGPS.x - zone.xmin
-            gps_zmin = startGPS.z + zone.zmin
-            gps_zmax = startGPS.z + zone.zmax
-        elseif initialDirection == "east" then
-            -- Deployer faces east (+X), workers face west (-X)
-            -- Deployer's right (dig.lua +X) is south (+Z GPS)
-            -- dig.lua +Z (forward for deployer) = east (+X GPS)
-            gps_xmin = startGPS.x + zone.zmin
-            gps_xmax = startGPS.x + zone.zmax
-            gps_zmin = startGPS.z + zone.xmin
-            gps_zmax = startGPS.z + zone.xmax
-        elseif initialDirection == "west" then
-            -- Deployer faces west (-X), workers face east (+X)
-            -- Deployer's right (dig.lua +X) is north (-Z GPS)
-            -- dig.lua +Z (forward for deployer) = west (-X GPS)
+            -- dig.lua +X → GPS North (GPS -Z)
+            -- dig.lua +Z → GPS West (GPS -X) [90° counter-clockwise from North]
             gps_xmin = startGPS.x - zone.zmax
             gps_xmax = startGPS.x - zone.zmin
             gps_zmin = startGPS.z - zone.xmax
             gps_zmax = startGPS.z - zone.xmin
+        elseif initialDirection == "south" then
+            -- dig.lua +X → GPS South (GPS +Z)
+            -- dig.lua +Z → GPS East (GPS +X) [90° counter-clockwise from South]
+            gps_xmin = startGPS.x + zone.zmin
+            gps_xmax = startGPS.x + zone.zmax
+            gps_zmin = startGPS.z + zone.xmin
+            gps_zmax = startGPS.z + zone.xmax
+        elseif initialDirection == "east" then
+            -- dig.lua +X → GPS East (GPS +X)
+            -- dig.lua +Z → GPS North (GPS -Z) [90° counter-clockwise from East]
+            gps_xmin = startGPS.x + zone.xmin
+            gps_xmax = startGPS.x + zone.xmax
+            gps_zmin = startGPS.z - zone.zmax
+            gps_zmax = startGPS.z - zone.zmin
+        elseif initialDirection == "west" then
+            -- dig.lua +X → GPS West (GPS -X)
+            -- dig.lua +Z → GPS South (GPS +Z) [90° counter-clockwise from West]
+            gps_xmin = startGPS.x - zone.xmax
+            gps_xmax = startGPS.x - zone.xmin
+            gps_zmin = startGPS.z + zone.zmin
+            gps_zmax = startGPS.z + zone.zmax
         else
             return nil, "Invalid initialDirection: " .. tostring(initialDirection)
         end
@@ -129,36 +140,51 @@ function ZoneManager.findZoneForPosition(gpsZones, workerGPS)
     return nil
 end
 
--- Calculate initial cardinal direction based on chest positions
--- The deployer places chests with output at (0,0,0) and fuel at (+1,0,0) in dig.lua coords
--- Workers are placed at their zone's xmin (e.g., 0, 10, 20...) facing rotation 180 (opposite of +X)
--- Returns which cardinal direction corresponds to dig.lua +X axis
+-- Calculate which GPS cardinal direction dig.lua +X axis points toward
+-- The deployer places chests with output at dig.lua (0,0,0) and fuel at dig.lua (1,0,0)
+-- By observing the GPS positions, we can deduce the coordinate system mapping
+-- Returns: GPS cardinal direction that dig.lua +X points toward
 function ZoneManager.calculateInitialDirection(fuelChestGPS, outputChestGPS)
     if not fuelChestGPS or not outputChestGPS then
-        return "east", "No chest positions provided, defaulting to east"
+        return "south", "No chest positions provided, defaulting to south"
     end
     
     local deltaX = fuelChestGPS.x - outputChestGPS.x
     local deltaZ = fuelChestGPS.z - outputChestGPS.z
     
-    -- Fuel chest is at dig.lua (+1, 0, 0) relative to output chest at (0, 0, 0)
-    -- So the GPS difference tells us which cardinal direction is dig.lua +X
+    -- Fuel chest is at dig.lua (1, 0, 0) relative to output chest at (0, 0, 0)
+    -- The GPS delta tells us which GPS direction is dig.lua +X
     if math.abs(deltaX) > math.abs(deltaZ) then
         if deltaX > 0 then
-            -- Fuel is east (+X GPS) of output, so dig.lua +X = GPS +X = east
-            return "east"
+            return "east"   -- dig.lua +X → GPS +X (East)
         else
-            -- Fuel is west (-X GPS) of output, so dig.lua +X = GPS -X = west
-            return "west"
+            return "west"   -- dig.lua +X → GPS -X (West)
         end
     else
         if deltaZ > 0 then
-            -- Fuel is south (+Z GPS) of output, so dig.lua +X = GPS +Z = south
-            return "south"
+            return "south"  -- dig.lua +X → GPS +Z (South)
         else
-            -- Fuel is north (-Z GPS) of output, so dig.lua +X = GPS -Z = north
-            return "north"
+            return "north"  -- dig.lua +X → GPS -Z (North)
         end
+    end
+end
+
+-- Calculate which GPS cardinal direction workers should face
+-- Workers are placed with dig.lua rotation=180, which means they face dig.lua -Z
+-- Since dig.lua +Z is 90° counter-clockwise from dig.lua +X,
+-- dig.lua -Z is 90° clockwise from dig.lua +X
+function ZoneManager.calculateWorkerFacing(initialDirection)
+    -- dig.lua -Z (rotation=180) is 90° clockwise from dig.lua +X (rotation=90)
+    if initialDirection == "north" then
+        return "east"   -- dig.lua +X→North, so -Z→East (90° clockwise)
+    elseif initialDirection == "south" then
+        return "west"   -- dig.lua +X→South, so -Z→West (90° clockwise)
+    elseif initialDirection == "east" then
+        return "south"  -- dig.lua +X→East, so -Z→South (90° clockwise)
+    elseif initialDirection == "west" then
+        return "north"  -- dig.lua +X→West, so -Z→North (90° clockwise)
+    else
+        return "north"  -- fallback
     end
 end
 
